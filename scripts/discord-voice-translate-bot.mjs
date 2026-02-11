@@ -32,6 +32,7 @@ let languagePairs = parseLanguagePairs(process.env.LANGUAGE_PAIRS || "en:ro,ro:e
 let defaultTargetLanguage = normalizeLanguageToken(process.env.DEFAULT_TARGET_LANGUAGE || "");
 let userTargetLanguages = parseUserTargetLanguages(process.env.DISCORD_USER_TARGET_LANGUAGES);
 let allowedUserIds = parseAllowedUserIds(process.env.VOICE_ALLOWED_USER_IDS);
+let ignoredUserIds = parseAllowedUserIds(process.env.VOICE_IGNORED_USER_IDS);
 let requireStartCommand = parseBoolean(process.env.REQUIRE_START_COMMAND, false);
 let translationEnabled = !requireStartCommand;
 
@@ -109,6 +110,11 @@ async function main() {
     if (allowedUserIds.size > 0) {
       console.log(
         `[discord-voice-bot] strict-user-mode enabled, allowed_users=${Array.from(allowedUserIds).join(",")}`,
+      );
+    }
+    if (ignoredUserIds.size > 0) {
+      console.log(
+        `[discord-voice-bot] ignore-user-mode enabled, ignored_users=${Array.from(ignoredUserIds).join(",")}`,
       );
     }
     if (requireStartCommand) {
@@ -285,6 +291,7 @@ function renderStatus() {
     `language_pairs=${languagePairsToCsv(languagePairs) || "-"}`,
     `default_target=${defaultTargetLanguage || "-"}`,
     `user_targets=${userTargetsToCsv(userTargetLanguages) || "-"}`,
+    `ignored_users=${Array.from(ignoredUserIds).join(",") || "-"}`,
   ].join(" | ");
 }
 
@@ -300,6 +307,9 @@ function applyRuntimeSetting(key, value) {
       case "user_target_languages":
         userTargetLanguages = parseUserTargetLanguagesStrict(value, true);
         return { ok: true, value: userTargetsToCsv(userTargetLanguages) || "-" };
+      case "ignored_user_ids":
+        ignoredUserIds = parseAllowedUserIds(value);
+        return { ok: true, value: Array.from(ignoredUserIds).join(",") || "-" };
       case "tts_voice":
         ttsVoice = value.trim();
         return { ok: true, value: ttsVoice };
@@ -319,7 +329,7 @@ function applyRuntimeSetting(key, value) {
         return {
           ok: false,
           error:
-            "key not supported. Use: language_pairs, default_target_language, user_target_languages, tts_voice, tts_model, transcribe_model, silence_ms, voice_min_pcm_bytes",
+            "key not supported. Use: language_pairs, default_target_language, user_target_languages, ignored_user_ids, tts_voice, tts_model, transcribe_model, silence_ms, voice_min_pcm_bytes",
         };
     }
   } catch (error) {
@@ -339,10 +349,31 @@ async function sendControlMessage(channelId, text) {
   });
 }
 
+async function sendControlTranslationReply(channelId, sourceLang, sourceText, targetLang, targetText) {
+  const channel = await client.channels.fetch(channelId);
+  if (!channel || !channel.isTextBased()) return;
+
+  const originalMessage = await channel.send({
+    content: `[${sourceLang}] ${sourceText}`.slice(0, 1900),
+    allowedMentions: {
+      parse: [],
+    },
+  });
+
+  await originalMessage.reply({
+    content: `[${targetLang}] ${targetText}`.slice(0, 1900),
+    allowedMentions: {
+      parse: [],
+      repliedUser: false,
+    },
+  });
+}
+
 async function handleUserSpeaking(receiver, userId) {
   if (!translationEnabled) return;
   if (!client.user) return;
   if (userId === client.user.id) return;
+  if (ignoredUserIds.size > 0 && ignoredUserIds.has(userId)) return;
   if (allowedUserIds.size > 0 && !allowedUserIds.has(userId)) return;
   if (activeSpeakers.has(userId)) return;
 
@@ -441,8 +472,13 @@ async function processUtterance(userId, pcmBuffer) {
     });
 
     if (textFeedbackEnabled && DISCORD_CONTROL_CHANNEL_ID) {
-      const label = `[${translated.detected_language}->${translated.target_language}]`;
-      await sendControlMessage(DISCORD_CONTROL_CHANNEL_ID, `${label} ${translated.translated_text}`);
+      await sendControlTranslationReply(
+        DISCORD_CONTROL_CHANNEL_ID,
+        translated.detected_language,
+        inputText,
+        translated.target_language,
+        translated.translated_text,
+      );
     }
   } catch (error) {
     console.error(`[discord-voice-bot] processing error: ${error.message}`);

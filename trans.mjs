@@ -46,6 +46,7 @@ Voice mode:
   trans voice set channel <voice_channel_id>
   trans voice set control-channel <text_channel_id|clear>
   trans voice set users <id1,id2,...>
+  trans voice set ignore-users <id1,id2,...|clear>
   trans voice set lang-in <code>
   trans voice set lang-out <code>
   trans voice set language-pairs <src:dst,src:dst,...|clear>
@@ -858,6 +859,15 @@ function setVoiceCmd(key, value) {
     case "users":
       setUsersCmd(value, VOICE_CONFIG_FILE, "VOICE_ALLOWED_USER_IDS");
       return;
+    case "ignore-users":
+    case "ignored-users":
+      if (isClearValue(value)) {
+        upsertConfigValue("VOICE_IGNORED_USER_IDS", "", VOICE_CONFIG_FILE);
+        info("cleared VOICE_IGNORED_USER_IDS");
+      } else {
+        setUsersCmd(value, VOICE_CONFIG_FILE, "VOICE_IGNORED_USER_IDS");
+      }
+      return;
     case "channel":
       setChannelCmd(value, VOICE_CONFIG_FILE, "DISCORD_VOICE_CHANNEL_ID", "");
       return;
@@ -1051,6 +1061,7 @@ function showVoiceCmd() {
   info(`DISCORD_VOICE_CHANNEL_ID=${cfg.DISCORD_VOICE_CHANNEL_ID || ""}`);
   info(`DISCORD_CONTROL_CHANNEL_ID=${cfg.DISCORD_CONTROL_CHANNEL_ID || ""}`);
   info(`VOICE_ALLOWED_USER_IDS=${cfg.VOICE_ALLOWED_USER_IDS || ""}`);
+  info(`VOICE_IGNORED_USER_IDS=${cfg.VOICE_IGNORED_USER_IDS || ""}`);
   info(`TRANS_LANG_IN=${cfg.TRANS_LANG_IN || ""}`);
   info(`TRANS_LANG_OUT=${cfg.TRANS_LANG_OUT || ""}`);
   info(`LANGUAGE_PAIRS=${cfg.LANGUAGE_PAIRS || ""}`);
