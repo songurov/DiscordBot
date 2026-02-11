@@ -2,3 +2,6 @@
 .trans.env
 .trans.pid
 .trans.log
+.vtrans.env
+.vtrans.pid
+.vtrans.log

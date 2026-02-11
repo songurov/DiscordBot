@@ -111,3 +111,66 @@ trans set discord-token <bot_token>
 - Dedicated Discord text translation bot for two people
 - Configurable any-language -> any-language routing
 - Optimized for private server channels
+
+## 8. Voice Call Bot (real-time call translation)
+
+New script:
+- `scripts/discord-voice-translate-bot.mjs`
+
+### 8.1 Install dependencies
+
+```bash
+npm install
+```
+
+### 8.2 Prepare voice config
+
+```bash
+cp .vtrans.env.example .vtrans.env
+```
+
+Edit `.vtrans.env` and set at minimum:
+- `DISCORD_BOT_TOKEN`
+- `OPENAI_API_KEY`
+- `DISCORD_VOICE_CHANNEL_ID`
+- `DISCORD_CONTROL_CHANNEL_ID` (recommended, for `start/stop/status` commands)
+
+### 8.3 Start voice bot
+
+```bash
+set -a
+source .vtrans.env
+set +a
+npm run start:voice
+```
+
+### 8.4 How it works in call
+
+1. Bot joins the configured voice channel.
+2. It listens to allowed users.
+3. It transcribes speech -> translates -> plays translated voice in the same call.
+4. If `REQUIRE_START_COMMAND=true`, send `start` (or `!start`) in control text channel first.
+
+### 8.5 Voice commands in text channel
+
+- `start` / `stop` / `status`
+- `!vbot help`
+- `!vbot start`
+- `!vbot stop`
+- `!vbot status`
+- `!vbot join`
+- `!vbot leave`
+- `!vbot set language_pairs ro:en,en:ro`
+- `!vbot set default_target_language en`
+- `!vbot set user_target_languages 653582557711040513:en,938846694286704680:ro`
+
+### 8.6 Discord permissions/intents required
+
+- `Message Content Intent` enabled in Discord Developer Portal.
+- In server/channel permissions bot needs:
+- `View Channels`
+- `Send Messages`
+- `Read Message History`
+- `Connect`
+- `Speak`
+- `Use Voice Activity`
