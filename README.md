@@ -126,22 +126,33 @@ npm install
 ### 8.2 Prepare voice config
 
 ```bash
-cp .vtrans.env.example .vtrans.env
+trans voice init
 ```
 
-Edit `.vtrans.env` and set at minimum:
-- `DISCORD_BOT_TOKEN`
-- `OPENAI_API_KEY`
-- `DISCORD_VOICE_CHANNEL_ID`
-- `DISCORD_CONTROL_CHANNEL_ID` (recommended, for `start/stop/status` commands)
+Set core values directly from CLI:
+
+```bash
+trans voice set discord-token YOUR_DISCORD_BOT_TOKEN
+trans voice set openai-key YOUR_OPENAI_API_KEY
+trans voice set channel YOUR_VOICE_CHANNEL_ID
+trans voice set control-channel YOUR_TEXT_CHANNEL_ID
+trans voice set users 653582557711040513,938846694286704680
+trans voice set lang-in ro
+trans voice set lang-out en
+```
+
+Check current voice config:
+
+```bash
+trans voice show
+```
 
 ### 8.3 Start voice bot
 
 ```bash
-set -a
-source .vtrans.env
-set +a
-npm run start:voice
+trans voice start
+trans voice status
+trans voice logs 80
 ```
 
 ### 8.4 How it works in call
@@ -164,7 +175,24 @@ npm run start:voice
 - `!vbot set default_target_language en`
 - `!vbot set user_target_languages 653582557711040513:en,938846694286704680:ro`
 
-### 8.6 Discord permissions/intents required
+### 8.6 Voice commands in CLI (`trans`)
+
+```bash
+trans voice init
+trans voice start|stop|restart|status|show|logs
+trans voice set channel <voice_channel_id>
+trans voice set control-channel <text_channel_id|clear>
+trans voice set users <id1,id2,...>
+trans voice set lang-in <code>
+trans voice set lang-out <code>
+trans voice set language-pairs <src:dst,src:dst,...|clear>
+trans voice set default-target <code|clear>
+trans voice set user-targets <userId:lang,userId:lang|clear>
+trans voice set openai-key <api_key>
+trans voice set discord-token <bot_token>
+```
+
+### 8.7 Discord permissions/intents required
 
 - `Message Content Intent` enabled in Discord Developer Portal.
 - In server/channel permissions bot needs:

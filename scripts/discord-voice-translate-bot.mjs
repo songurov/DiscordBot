@@ -99,7 +99,7 @@ async function main() {
     ],
   });
 
-  client.once("ready", async () => {
+  client.once("clientReady", async () => {
     console.log(
       `[discord-voice-bot] connected as ${client.user?.username} (${client.user?.id}), voice_channel=${DISCORD_VOICE_CHANNEL_ID}`,
     );

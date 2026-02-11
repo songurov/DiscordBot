@@ -12,6 +12,11 @@ const CONFIG_EXAMPLE = path.join(ROOT_DIR, ".trans.env.example");
 const PID_FILE = process.env.TRANS_PID_FILE || path.join(ROOT_DIR, ".trans.pid");
 const LOG_FILE = process.env.TRANS_LOG_FILE || path.join(ROOT_DIR, ".trans.log");
 const BOT_SCRIPT = path.join(ROOT_DIR, "scripts", "discord-translate-bot.mjs");
+const VOICE_CONFIG_FILE = process.env.VTRANS_CONFIG_FILE || path.join(ROOT_DIR, ".vtrans.env");
+const VOICE_CONFIG_EXAMPLE = path.join(ROOT_DIR, ".vtrans.env.example");
+const VOICE_PID_FILE = process.env.VTRANS_PID_FILE || path.join(ROOT_DIR, ".vtrans.pid");
+const VOICE_LOG_FILE = process.env.VTRANS_LOG_FILE || path.join(ROOT_DIR, ".vtrans.log");
+const VOICE_BOT_SCRIPT = path.join(ROOT_DIR, "scripts", "discord-voice-translate-bot.mjs");
 
 function usage() {
   console.log(`Usage:
@@ -33,8 +38,23 @@ function usage() {
   trans set openai-key <api_key>
   trans set discord-token <bot_token>
 
+Voice mode:
+  trans voice init
+  trans voice start|stop|restart|status|show|logs [lines]
+  trans voice set channel <voice_channel_id>
+  trans voice set control-channel <text_channel_id|clear>
+  trans voice set users <id1,id2,...>
+  trans voice set lang-in <code>
+  trans voice set lang-out <code>
+  trans voice set language-pairs <src:dst,src:dst,...|clear>
+  trans voice set default-target <code|clear>
+  trans voice set user-targets <userId:lang,userId:lang|clear>
+  trans voice set openai-key <api_key>
+  trans voice set discord-token <bot_token>
+
 Notes:
   - Config file: .trans.env (auto-created from .trans.env.example if missing)
+  - Voice config file: .vtrans.env (auto-created from .vtrans.env.example if missing)
   - On start, if TRANS_LANG_IN and TRANS_LANG_OUT are set, LANGUAGE_PAIRS is auto-generated.
   - Linux/macOS local run: ./trans start
   - Windows local run: trans.cmd start
@@ -79,6 +99,27 @@ function ensureConfigFile(options = {}) {
   return true;
 }
 
+function ensureVoiceConfigFile(options = {}) {
+  const { failIfCreated = false } = options;
+
+  if (fs.existsSync(VOICE_CONFIG_FILE)) {
+    return false;
+  }
+
+  if (!fs.existsSync(VOICE_CONFIG_EXAMPLE)) {
+    fail(`missing ${VOICE_CONFIG_FILE} and template ${VOICE_CONFIG_EXAMPLE}`);
+  }
+
+  fs.copyFileSync(VOICE_CONFIG_EXAMPLE, VOICE_CONFIG_FILE);
+  info(`created ${VOICE_CONFIG_FILE} from template`);
+
+  if (failIfCreated) {
+    fail(`fill real keys in ${VOICE_CONFIG_FILE}, then run: trans voice start`);
+  }
+
+  return true;
+}
+
 function parseEnvValue(rawValue) {
   const value = String(rawValue ?? "").trim();
   if (!value) return "";
@@ -113,10 +154,10 @@ function parseEnvFile(filePath) {
   return result;
 }
 
-function upsertConfigValue(key, value) {
+function upsertConfigValue(key, value, filePath = CONFIG_FILE) {
   const normalizedValue = String(value ?? "");
-  const lines = fs.existsSync(CONFIG_FILE)
-    ? fs.readFileSync(CONFIG_FILE, "utf8").split(/\r?\n/)
+  const lines = fs.existsSync(filePath)
+    ? fs.readFileSync(filePath, "utf8").split(/\r?\n/)
     : [];
 
   const regex = new RegExp(`^\\s*(?:export\\s+)?${escapeRegex(key)}\\s*=`);
@@ -135,15 +176,15 @@ function upsertConfigValue(key, value) {
   }
 
   const finalLines = lines.filter((_, idx, arr) => !(idx === arr.length - 1 && arr[idx] === ""));
-  fs.writeFileSync(CONFIG_FILE, `${finalLines.join("\n")}\n`, "utf8");
+  fs.writeFileSync(filePath, `${finalLines.join("\n")}\n`, "utf8");
 }
 
-function readConfig() {
-  return parseEnvFile(CONFIG_FILE);
+function readConfig(filePath = CONFIG_FILE) {
+  return parseEnvFile(filePath);
 }
 
-function readConfigValue(key) {
-  const cfg = readConfig();
+function readConfigValue(key, filePath = CONFIG_FILE) {
+  const cfg = readConfig(filePath);
   return String(cfg[key] ?? "");
 }
 
@@ -171,18 +212,18 @@ function isClearValue(value) {
   return normalized === "" || normalized === "clear" || normalized === "none" || normalized === "-";
 }
 
-function syncLanguagePairsFromInOut() {
-  const inLang = normalizeLang(readConfigValue("TRANS_LANG_IN"));
-  const outLang = normalizeLang(readConfigValue("TRANS_LANG_OUT"));
+function syncLanguagePairsFromInOut(filePath = CONFIG_FILE) {
+  const inLang = normalizeLang(readConfigValue("TRANS_LANG_IN", filePath));
+  const outLang = normalizeLang(readConfigValue("TRANS_LANG_OUT", filePath));
 
   if (!inLang || !outLang) return;
   if (!validateLang(inLang)) fail(`invalid TRANS_LANG_IN: ${inLang}`);
   if (!validateLang(outLang)) fail(`invalid TRANS_LANG_OUT: ${outLang}`);
   if (inLang === outLang) fail("TRANS_LANG_IN and TRANS_LANG_OUT must be different");
 
-  upsertConfigValue("TRANS_LANG_IN", inLang);
-  upsertConfigValue("TRANS_LANG_OUT", outLang);
-  upsertConfigValue("LANGUAGE_PAIRS", `${inLang}:${outLang},${outLang}:${inLang}`);
+  upsertConfigValue("TRANS_LANG_IN", inLang, filePath);
+  upsertConfigValue("TRANS_LANG_OUT", outLang, filePath);
+  upsertConfigValue("LANGUAGE_PAIRS", `${inLang}:${outLang},${outLang}:${inLang}`, filePath);
 }
 
 function readPid() {
@@ -211,6 +252,26 @@ function isRunning() {
 function clearPidFile() {
   if (fs.existsSync(PID_FILE)) {
     fs.rmSync(PID_FILE);
+  }
+}
+
+function readVoicePid() {
+  if (!fs.existsSync(VOICE_PID_FILE)) return null;
+  const raw = fs.readFileSync(VOICE_PID_FILE, "utf8").trim();
+  const pid = Number.parseInt(raw, 10);
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  return pid;
+}
+
+function isVoiceRunning() {
+  const pid = readVoicePid();
+  if (!pid) return false;
+  return isPidRunning(pid);
+}
+
+function clearVoicePidFile() {
+  if (fs.existsSync(VOICE_PID_FILE)) {
+    fs.rmSync(VOICE_PID_FILE);
   }
 }
 
@@ -260,6 +321,34 @@ function validateStartConfig(config) {
   }
 }
 
+function validateVoiceStartConfig(config) {
+  const botToken = String(config.DISCORD_BOT_TOKEN ?? "").trim();
+  const openAiKey = String(config.OPENAI_API_KEY ?? "").trim();
+  const voiceChannelId = String(config.DISCORD_VOICE_CHANNEL_ID ?? "").trim();
+
+  if (!botToken) fail(`DISCORD_BOT_TOKEN is empty in ${VOICE_CONFIG_FILE}`);
+  if (!openAiKey) fail(`OPENAI_API_KEY is empty in ${VOICE_CONFIG_FILE}`);
+
+  if (looksLikePlaceholder(botToken)) {
+    fail(`DISCORD_BOT_TOKEN looks like template value. Set real token in ${VOICE_CONFIG_FILE}`);
+  }
+  if (looksLikePlaceholder(openAiKey)) {
+    fail(`OPENAI_API_KEY looks like template value. Set real key in ${VOICE_CONFIG_FILE}`);
+  }
+
+  if (!voiceChannelId) {
+    fail(`set DISCORD_VOICE_CHANNEL_ID in ${VOICE_CONFIG_FILE}`);
+  }
+  if (!validateDiscordId(voiceChannelId)) {
+    fail("DISCORD_VOICE_CHANNEL_ID is not valid");
+  }
+
+  const controlChannelId = String(config.DISCORD_CONTROL_CHANNEL_ID ?? "").trim();
+  if (controlChannelId && !validateDiscordId(controlChannelId)) {
+    fail("DISCORD_CONTROL_CHANNEL_ID is not valid");
+  }
+}
+
 function buildRuntimeEnv(config) {
   const runtime = { ...process.env, ...config };
 
@@ -272,13 +361,13 @@ function buildRuntimeEnv(config) {
   return runtime;
 }
 
-function tailLogLines(linesCount) {
-  if (!fs.existsSync(LOG_FILE)) {
-    fs.writeFileSync(LOG_FILE, "", "utf8");
+function tailLogLines(linesCount, logFile = LOG_FILE) {
+  if (!fs.existsSync(logFile)) {
+    fs.writeFileSync(logFile, "", "utf8");
     return "";
   }
 
-  const content = fs.readFileSync(LOG_FILE, "utf8");
+  const content = fs.readFileSync(logFile, "utf8");
   if (!content) return "";
 
   const rows = content.split(/\r?\n/);
@@ -429,44 +518,56 @@ function logsCmd(linesArg) {
   if (tail) console.log(tail);
 }
 
-function setLangInCmd(value) {
+function setLangInCmd(value, filePath = CONFIG_FILE) {
   const normalized = normalizeLang(value);
   if (!validateLang(normalized)) fail(`invalid language: ${value}`);
 
-  upsertConfigValue("TRANS_LANG_IN", normalized);
-  syncLanguagePairsFromInOut();
+  upsertConfigValue("TRANS_LANG_IN", normalized, filePath);
+  syncLanguagePairsFromInOut(filePath);
   info(`updated TRANS_LANG_IN=${normalized}`);
 }
 
-function setLangOutCmd(value) {
+function setLangOutCmd(value, filePath = CONFIG_FILE) {
   const normalized = normalizeLang(value);
   if (!validateLang(normalized)) fail(`invalid language: ${value}`);
 
-  upsertConfigValue("TRANS_LANG_OUT", normalized);
-  syncLanguagePairsFromInOut();
+  upsertConfigValue("TRANS_LANG_OUT", normalized, filePath);
+  syncLanguagePairsFromInOut(filePath);
   info(`updated TRANS_LANG_OUT=${normalized}`);
 }
 
-function setUsersCmd(value) {
+function setUsersCmd(value, filePath = CONFIG_FILE, key = "DISCORD_ALLOWED_USER_IDS") {
   if (!validateUserList(value)) fail("invalid user list format (use id1,id2,...)");
-  upsertConfigValue("DISCORD_ALLOWED_USER_IDS", value);
-  info("updated DISCORD_ALLOWED_USER_IDS");
+  upsertConfigValue(key, value, filePath);
+  info(`updated ${key}`);
 }
 
-function setChannelCmd(value) {
+function setChannelCmd(
+  value,
+  filePath = CONFIG_FILE,
+  channelKey = "DISCORD_CHANNEL_ID",
+  clearKey = "DISCORD_TARGET_USER_ID",
+) {
   if (!validateDiscordId(value)) fail("invalid channel id");
-  upsertConfigValue("DISCORD_CHANNEL_ID", value);
-  upsertConfigValue("DISCORD_TARGET_USER_ID", "");
-  info(`updated DISCORD_CHANNEL_ID=${value}`);
-  info("cleared DISCORD_TARGET_USER_ID (channel mode active)");
+  upsertConfigValue(channelKey, value, filePath);
+  info(`updated ${channelKey}=${value}`);
+  if (clearKey) {
+    upsertConfigValue(clearKey, "", filePath);
+    info(`cleared ${clearKey} (channel mode active)`);
+  }
 }
 
-function setTargetUserCmd(value) {
+function setTargetUserCmd(
+  value,
+  filePath = CONFIG_FILE,
+  targetKey = "DISCORD_TARGET_USER_ID",
+  clearKey = "DISCORD_CHANNEL_ID",
+) {
   if (!validateDiscordId(value)) fail("invalid user id");
-  upsertConfigValue("DISCORD_TARGET_USER_ID", value);
-  upsertConfigValue("DISCORD_CHANNEL_ID", "");
-  info(`updated DISCORD_TARGET_USER_ID=${value}`);
-  info("cleared DISCORD_CHANNEL_ID (dm mode active)");
+  upsertConfigValue(targetKey, value, filePath);
+  upsertConfigValue(clearKey, "", filePath);
+  info(`updated ${targetKey}=${value}`);
+  info(`cleared ${clearKey} (dm mode active)`);
 }
 
 function normalizeLanguagePairs(raw) {
@@ -500,21 +601,21 @@ function normalizeLanguagePairs(raw) {
   return normalized.join(",");
 }
 
-function setLanguagePairsCmd(value) {
+function setLanguagePairsCmd(value, filePath = CONFIG_FILE) {
   if (isClearValue(value)) {
-    upsertConfigValue("LANGUAGE_PAIRS", "");
+    upsertConfigValue("LANGUAGE_PAIRS", "", filePath);
     info("cleared LANGUAGE_PAIRS");
     return;
   }
 
   const normalized = normalizeLanguagePairs(value);
-  upsertConfigValue("LANGUAGE_PAIRS", normalized);
+  upsertConfigValue("LANGUAGE_PAIRS", normalized, filePath);
   info(`updated LANGUAGE_PAIRS=${normalized}`);
 }
 
-function setDefaultTargetCmd(value) {
+function setDefaultTargetCmd(value, filePath = CONFIG_FILE) {
   if (isClearValue(value)) {
-    upsertConfigValue("DEFAULT_TARGET_LANGUAGE", "");
+    upsertConfigValue("DEFAULT_TARGET_LANGUAGE", "", filePath);
     info("cleared DEFAULT_TARGET_LANGUAGE");
     return;
   }
@@ -522,7 +623,7 @@ function setDefaultTargetCmd(value) {
   const normalized = normalizeLang(value);
   if (!validateLang(normalized)) fail("invalid language code");
 
-  upsertConfigValue("DEFAULT_TARGET_LANGUAGE", normalized);
+  upsertConfigValue("DEFAULT_TARGET_LANGUAGE", normalized, filePath);
   info(`updated DEFAULT_TARGET_LANGUAGE=${normalized}`);
 }
 
@@ -556,29 +657,29 @@ function normalizeUserTargets(raw) {
   return normalized.join(",");
 }
 
-function setUserTargetsCmd(value) {
+function setUserTargetsCmd(value, filePath = CONFIG_FILE) {
   if (isClearValue(value)) {
-    upsertConfigValue("DISCORD_USER_TARGET_LANGUAGES", "");
+    upsertConfigValue("DISCORD_USER_TARGET_LANGUAGES", "", filePath);
     info("cleared DISCORD_USER_TARGET_LANGUAGES");
     return;
   }
 
   const normalized = normalizeUserTargets(value);
-  upsertConfigValue("DISCORD_USER_TARGET_LANGUAGES", normalized);
+  upsertConfigValue("DISCORD_USER_TARGET_LANGUAGES", normalized, filePath);
   info(`updated DISCORD_USER_TARGET_LANGUAGES=${normalized}`);
 }
 
-function setOpenAiKeyCmd(value) {
+function setOpenAiKeyCmd(value, filePath = CONFIG_FILE) {
   const normalized = String(value || "").trim();
   if (!normalized) fail("openai key cannot be empty");
-  upsertConfigValue("OPENAI_API_KEY", normalized);
+  upsertConfigValue("OPENAI_API_KEY", normalized, filePath);
   info("updated OPENAI_API_KEY");
 }
 
-function setDiscordTokenCmd(value) {
+function setDiscordTokenCmd(value, filePath = CONFIG_FILE) {
   const normalized = String(value || "").trim();
   if (!normalized) fail("discord token cannot be empty");
-  upsertConfigValue("DISCORD_BOT_TOKEN", normalized);
+  upsertConfigValue("DISCORD_BOT_TOKEN", normalized, filePath);
   info("updated DISCORD_BOT_TOKEN");
 }
 
@@ -633,11 +734,264 @@ function setCmd(key, value) {
   }
 }
 
+function setVoiceControlChannelCmd(value) {
+  if (isClearValue(value)) {
+    upsertConfigValue("DISCORD_CONTROL_CHANNEL_ID", "", VOICE_CONFIG_FILE);
+    info("cleared DISCORD_CONTROL_CHANNEL_ID");
+    return;
+  }
+
+  if (!validateDiscordId(value)) fail("invalid control channel id");
+  upsertConfigValue("DISCORD_CONTROL_CHANNEL_ID", value, VOICE_CONFIG_FILE);
+  info(`updated DISCORD_CONTROL_CHANNEL_ID=${value}`);
+}
+
+function setVoiceCmd(key, value) {
+  ensureVoiceConfigFile();
+
+  if (!key) fail("missing voice set key");
+  if (!value) fail("missing voice set value");
+
+  switch (key) {
+    case "lang-in":
+    case "in":
+      setLangInCmd(value, VOICE_CONFIG_FILE);
+      return;
+    case "lang-out":
+    case "out":
+      setLangOutCmd(value, VOICE_CONFIG_FILE);
+      return;
+    case "users":
+      setUsersCmd(value, VOICE_CONFIG_FILE, "VOICE_ALLOWED_USER_IDS");
+      return;
+    case "channel":
+      setChannelCmd(value, VOICE_CONFIG_FILE, "DISCORD_VOICE_CHANNEL_ID", "");
+      return;
+    case "control-channel":
+      setVoiceControlChannelCmd(value);
+      return;
+    case "language-pairs":
+    case "pairs":
+      setLanguagePairsCmd(value, VOICE_CONFIG_FILE);
+      return;
+    case "default-target":
+      setDefaultTargetCmd(value, VOICE_CONFIG_FILE);
+      return;
+    case "user-targets":
+      setUserTargetsCmd(value, VOICE_CONFIG_FILE);
+      return;
+    case "openai-key":
+    case "openai":
+    case "openai_api_key":
+      setOpenAiKeyCmd(value, VOICE_CONFIG_FILE);
+      return;
+    case "discord-token":
+    case "discord":
+    case "bot-token":
+    case "discord_bot_token":
+      setDiscordTokenCmd(value, VOICE_CONFIG_FILE);
+      return;
+    default:
+      fail(`unknown voice set key: ${key}`);
+  }
+}
+
+function initVoiceCmd() {
+  const created = ensureVoiceConfigFile();
+  if (!created) {
+    info(`voice config already exists: ${VOICE_CONFIG_FILE}`);
+  }
+}
+
+async function startVoiceCmd() {
+  ensureVoiceConfigFile({ failIfCreated: true });
+
+  if (isVoiceRunning()) {
+    info(`voice already running (pid ${readVoicePid()})`);
+    return;
+  }
+
+  if (!fs.existsSync(VOICE_BOT_SCRIPT)) {
+    fail(`voice bot script not found: ${VOICE_BOT_SCRIPT}`);
+  }
+
+  syncLanguagePairsFromInOut(VOICE_CONFIG_FILE);
+  const config = readConfig(VOICE_CONFIG_FILE);
+  validateVoiceStartConfig(config);
+
+  fs.mkdirSync(path.dirname(VOICE_LOG_FILE), { recursive: true });
+  const logFd = fs.openSync(VOICE_LOG_FILE, "a");
+
+  const child = spawn(process.execPath, [VOICE_BOT_SCRIPT], {
+    cwd: ROOT_DIR,
+    env: buildRuntimeEnv(config),
+    detached: true,
+    windowsHide: true,
+    stdio: ["ignore", logFd, logFd],
+  });
+
+  child.unref();
+  fs.closeSync(logFd);
+
+  if (!child.pid) {
+    fail("failed to start voice process (missing pid)");
+  }
+
+  fs.writeFileSync(VOICE_PID_FILE, `${child.pid}\n`, "utf8");
+  await sleep(1000);
+
+  if (isVoiceRunning()) {
+    info(`voice started (pid ${readVoicePid()})`);
+    info(`voice log file: ${VOICE_LOG_FILE}`);
+    return;
+  }
+
+  info("voice failed to start; showing last log lines");
+  const tail = tailLogLines(60, VOICE_LOG_FILE);
+  if (tail) console.log(tail);
+  process.exit(1);
+}
+
+async function stopVoiceCmd() {
+  const pid = readVoicePid();
+  if (!pid || !isPidRunning(pid)) {
+    clearVoicePidFile();
+    info("voice already stopped");
+    return;
+  }
+
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+  } else {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // ignore and continue waiting check
+    }
+  }
+
+  for (let i = 0; i < 10; i += 1) {
+    await sleep(1000);
+    if (!isPidRunning(pid)) {
+      clearVoicePidFile();
+      info("voice stopped");
+      return;
+    }
+  }
+
+  if (process.platform !== "win32") {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // ignore
+    }
+
+    for (let i = 0; i < 3; i += 1) {
+      await sleep(500);
+      if (!isPidRunning(pid)) {
+        clearVoicePidFile();
+        info("voice stopped");
+        return;
+      }
+    }
+  }
+
+  fail(`voice process ${pid} did not stop cleanly; stop manually if needed`);
+}
+
+async function restartVoiceCmd() {
+  await stopVoiceCmd();
+  await startVoiceCmd();
+}
+
+function statusVoiceCmd() {
+  if (isVoiceRunning()) {
+    info(`voice running (pid ${readVoicePid()})`);
+  } else {
+    info("voice stopped");
+  }
+
+  info(`voice config: ${VOICE_CONFIG_FILE}`);
+  info(`voice log: ${VOICE_LOG_FILE}`);
+}
+
+function showVoiceCmd() {
+  ensureVoiceConfigFile();
+  const cfg = readConfig(VOICE_CONFIG_FILE);
+
+  info(`DISCORD_BOT_TOKEN=${maskSecret(cfg.DISCORD_BOT_TOKEN)}`);
+  info(`OPENAI_API_KEY=${maskSecret(cfg.OPENAI_API_KEY)}`);
+  info(`DISCORD_VOICE_CHANNEL_ID=${cfg.DISCORD_VOICE_CHANNEL_ID || ""}`);
+  info(`DISCORD_CONTROL_CHANNEL_ID=${cfg.DISCORD_CONTROL_CHANNEL_ID || ""}`);
+  info(`VOICE_ALLOWED_USER_IDS=${cfg.VOICE_ALLOWED_USER_IDS || ""}`);
+  info(`TRANS_LANG_IN=${cfg.TRANS_LANG_IN || ""}`);
+  info(`TRANS_LANG_OUT=${cfg.TRANS_LANG_OUT || ""}`);
+  info(`LANGUAGE_PAIRS=${cfg.LANGUAGE_PAIRS || ""}`);
+  info(`DEFAULT_TARGET_LANGUAGE=${cfg.DEFAULT_TARGET_LANGUAGE || ""}`);
+  info(`DISCORD_USER_TARGET_LANGUAGES=${cfg.DISCORD_USER_TARGET_LANGUAGES || ""}`);
+}
+
+function logsVoiceCmd(linesArg) {
+  const raw = String(linesArg || "60").trim();
+  if (!/^[0-9]+$/.test(raw)) {
+    fail("voice logs value must be numeric");
+  }
+
+  const count = Number.parseInt(raw, 10);
+  const tail = tailLogLines(count, VOICE_LOG_FILE);
+  if (tail) console.log(tail);
+}
+
+async function voiceMain(args) {
+  const command = args[0] || "help";
+
+  switch (command) {
+    case "init":
+      initVoiceCmd();
+      return;
+    case "start":
+      await startVoiceCmd();
+      return;
+    case "stop":
+      await stopVoiceCmd();
+      return;
+    case "restart":
+      await restartVoiceCmd();
+      return;
+    case "status":
+      statusVoiceCmd();
+      return;
+    case "show":
+      showVoiceCmd();
+      return;
+    case "logs":
+      logsVoiceCmd(args[1] || "60");
+      return;
+    case "set": {
+      const key = args[1] || "";
+      const value = args.slice(2).join(" ").trim();
+      setVoiceCmd(key, value);
+      return;
+    }
+    case "help":
+    case "-h":
+    case "--help":
+      usage();
+      return;
+    default:
+      fail(`unknown voice command: ${command}`);
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0] || "help";
 
   switch (command) {
+    case "voice":
+    case "call":
+      await voiceMain(args.slice(1));
+      return;
     case "start":
       await startCmd();
       return;

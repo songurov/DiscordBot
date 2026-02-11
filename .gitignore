@@ -5,3 +5,4 @@
 .vtrans.env
 .vtrans.pid
 .vtrans.log
+.npm-cache
