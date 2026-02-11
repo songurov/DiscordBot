@@ -13,3 +13,8 @@ Project purpose:
 
 Main script:
 - `scripts/discord-translate-bot.mjs`
+
+CLI wrappers:
+- engine: `trans.mjs`
+- Linux/macOS launcher: `trans`
+- Windows launcher: `trans.cmd`

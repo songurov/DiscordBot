@@ -256,3 +256,43 @@ Check:
 ## 12. Project Scope
 
 This project is optimized for dedicated two-person communication in a private Discord text channel, with configurable any-language-to-any-language translation.
+
+## 13. `trans` CLI (Linux, macOS, Windows)
+
+The repository includes a cross-platform CLI engine:
+- `trans.mjs`
+
+Launchers:
+- Linux/macOS: `trans`
+- Windows CMD/PowerShell: `trans.cmd` (also `trans.ps1`)
+
+Create local config:
+- `cp .trans.env.example .trans.env`
+- edit `.trans.env` with real keys
+
+Run locally:
+- Linux/macOS: `./trans start`
+- Linux/macOS: `./trans stop`
+- Linux/macOS: `./trans restart`
+- Linux/macOS: `./trans status`
+- Windows: `trans.cmd start`
+- Windows: `trans.cmd stop`
+- Windows: `trans.cmd restart`
+- Windows: `trans.cmd status`
+
+Quick config updates:
+- `./trans set lang-in ro` (Windows: `trans.cmd set lang-in ro`)
+- `./trans set lang-out en` (Windows: `trans.cmd set lang-out en`)
+- `./trans set users 653582557711040513,938846694286704680`
+
+Global command setup:
+- Linux:
+- `mkdir -p ~/.local/bin && ln -sf "$(pwd)/trans" ~/.local/bin/trans`
+- add to shell profile: `export PATH="$HOME/.local/bin:$PATH"`
+- macOS:
+- `ln -sf "$(pwd)/trans" /usr/local/bin/trans`
+- Windows:
+- add repo folder to `PATH`
+- then run `trans.cmd start` from any terminal
+
+After PATH setup you can use `trans start`, `trans stop`, `trans restart` directly on Linux/macOS.

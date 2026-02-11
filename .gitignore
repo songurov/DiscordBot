@@ -1,0 +1,4 @@
+.DS_Store
+.trans.env
+.trans.pid
+.trans.log
