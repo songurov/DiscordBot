@@ -1,20 +1,19 @@
-# Discord Translation Bot (EN <-> RO) - dedicat pentru 2 persoane
+# Discord Translation Bot (Orice limba -> Orice limba) - dedicat pentru 2 persoane
 
 Script principal: `scripts/discord-translate-bot.mjs`
 
-Acest bot este facut pentru conversatii text intre 2 persoane:
-- mesaj in romana -> raspuns in engleza
-- mesaj in engleza -> raspuns in romana
+Acest bot este facut pentru comunicare text intre 2 persoane pe Discord.
+Acum poate traduce intre orice limbi, nu doar EN <-> RO.
 
 Important:
-- botul functioneaza pentru text (mesaje), nu pentru voice call/live audio
-- botul trebuie sa fie membru in server/canalul unde vrei traducerea
-- pentru discutii private intre 2 persoane, recomandat este un canal privat de server (nu DM direct intre utilizatori)
+- Traducere doar pentru mesaje text (nu voice call/live audio).
+- Botul trebuie sa fie membru in server/canalul unde vrei traducerea.
+- Setup recomandat: canal privat de server cu exact 2 useri + bot.
 
 ## 1. Cerinte
 
 - Node.js 18+
-- Token de bot Discord
+- Discord bot token
 - OpenAI API key activ
 
 ## 2. Configurare Discord Developer (pas cu pas)
@@ -24,122 +23,138 @@ Portal oficial:
 
 ### 2.1 Creeaza aplicatia
 
-1. Intra pe URL-ul de mai sus
-2. Click `New Application`
-3. Pune un nume (ex: `Transale`)
+1. Intra pe portal.
+2. Click `New Application`.
+3. Introdu numele aplicatiei.
 
 ### 2.2 Creeaza bot user
 
-1. In aplicatia ta, intra la tab `Bot`
-2. Click `Add Bot`
-3. In sectiunea `Token` -> `Reset Token` / `Copy`
-4. Tokenul copiat este valoarea pentru `DISCORD_BOT_TOKEN`
+1. Intra in tab `Bot`.
+2. Click `Add Bot`.
+3. In `Token`, apasa `Reset Token` + `Copy`.
+4. Aceasta valoare devine `DISCORD_BOT_TOKEN`.
 
-### 2.3 Activeaza intent necesar
+### 2.3 Activeaza intent obligatoriu
 
 In tab `Bot`, activeaza:
 - `Message Content Intent` = ON
 
-Fara acest intent, botul nu poate citi continutul mesajelor.
+### 2.4 Genereaza URL de invitare bot
 
-### 2.4 Genereaza URL de invitatie bot
-
-1. Mergi la tab `OAuth2` -> `URL Generator`
+1. Intra la `OAuth2` -> `URL Generator`.
 2. La `Scopes`, bifeaza:
 - `bot`
-3. La `Bot Permissions`, bifeaza minim:
+3. La `Bot Permissions`, minim:
 - `View Channels`
 - `Read Message History`
 - `Send Messages`
-4. Daca vrei sa poata sterge mesajul original, mai bifeaza:
+4. Daca vrei stergere mesaj original, bifeaza si:
 - `Manage Messages`
-5. Deschide `Generated URL` si adauga botul pe serverul tau
+5. Deschide URL-ul generat si adauga botul pe server.
 
-Nota:
-- `Client Secret` NU este folosit de acest bot.
-- Redirect URI nu este necesar pentru acest flow simplu.
+Note:
+- `Client Secret` nu este folosit de acest bot.
+- Redirect URI nu este necesar in acest setup.
 
-## 3. Configurare server Discord pentru 2 persoane
+## 3. Configurare server pentru 2 persoane
 
-1. Creeaza un canal text privat (ex: `#boom-text-comunication`)
-2. In canal adauga doar:
+1. Creeaza un canal text privat (ex: `#boom-text-comunication`).
+2. Adauga doar:
 - tu
-- persoana a doua
+- a doua persoana
 - botul
-3. Verifica permisiunile botului in acel canal:
+3. Verifica permisiuni bot pe canal:
 - `View Channel`
 - `Read Message History`
 - `Send Messages`
-- `Manage Messages` (doar daca activezi stergere mesaj original)
+- `Manage Messages` (doar daca folosesti delete)
 
-Daca botul este invitat pe server dar nu il vezi in canal, cauza este aproape mereu permisiune lipsa pe canal.
+## 4. Cum obtii ID-urile
 
-## 4. Cum obtii ID-urile (channel + user)
+1. Discord -> `User Settings` -> `Advanced` -> activeaza `Developer Mode`.
+2. Channel ID: click dreapta pe canal -> `Copy Channel ID`.
+3. User ID: click dreapta pe user -> `Copy User ID`.
 
-1. Discord -> `User Settings` -> `Advanced` -> activeaza `Developer Mode`
-2. Channel ID: click dreapta pe canal -> `Copy Channel ID`
-3. User ID: click dreapta pe user -> `Copy User ID`
+Exemple (setup-ul tau):
+- userul tau: `653582557711040513`
+- userul 2: `938846694286704680`
+- canal exemplu: `1471169419605708938`
 
-Exemplu (setup-ul tau):
-- user personal: `653582557711040513`
-- user partener discutie: `938846694286704680`
-- channel exemplu: `1471169419605708938`
+## 5. OpenAI API key
 
-## 5. Cum obtii OpenAI API key
+- Keys: `https://platform.openai.com/api-keys`
+- Billing/quota: `https://platform.openai.com/settings/organization/billing`
 
-URL:
-- `https://platform.openai.com/api-keys`
-
-Billing/quota:
-- `https://platform.openai.com/settings/organization/billing`
-
-Daca vezi eroarea `insufficient_quota`, cheia poate fi valida, dar fara credit activ.
+Daca vezi `insufficient_quota`, cheia poate fi valida dar fara quota activa.
 
 ## 6. Variabile de mediu
 
 ### 6.1 Obligatorii
 
-- `DISCORD_BOT_TOKEN` - tokenul botului din Discord Developer Portal
-- `OPENAI_API_KEY` - cheia OpenAI
-- unul dintre:
-- `DISCORD_CHANNEL_ID` (mod server channel)
-- `DISCORD_TARGET_USER_ID` (mod DM direct cu botul)
+- `DISCORD_BOT_TOKEN`
+- `OPENAI_API_KEY`
+- una dintre:
+- `DISCORD_CHANNEL_ID` (mod canal server)
+- `DISCORD_TARGET_USER_ID` (mod DM cu botul)
 
-### 6.2 Optionale
+### 6.2 Optionale (rutare limbi)
+
+- `LANGUAGE_PAIRS` (default: `en:ro,ro:en`)
+- `DEFAULT_TARGET_LANGUAGE` (target global fortat, optional)
+- `DISCORD_USER_TARGET_LANGUAGES` (mapare per user)
+
+Prioritatea rutarii:
+1. mapare per user (`DISCORD_USER_TARGET_LANGUAGES`)
+2. `DEFAULT_TARGET_LANGUAGE`
+3. `LANGUAGE_PAIRS` pe baza limbii detectate
+
+Daca nu exista ruta valida, botul nu raspunde.
+
+### 6.3 Optionale (comportament)
 
 - `OPENAI_MODEL` (default: `gpt-4.1-mini`)
 - `POLL_INTERVAL_MS` (default: `2500`)
 - `POLL_LIMIT` (default: `50`)
-- `DISCORD_ALLOWED_USER_IDS` (lista user IDs separate prin virgula)
+- `DISCORD_ALLOWED_USER_IDS` (user IDs separate prin virgula)
 - `BOT_COMMAND_PREFIX` (default: `!bot`)
 - `REPLY_WITH_QUOTE` (`true`/`false`)
-- `DELETE_ORIGINAL_RO_TO_EN` (`true`/`false`)
-- `DELETE_ORIGINAL_USER_IDS` (cine are voie la auto-delete pe RO->EN)
 - `REQUIRE_START_COMMAND` (`true`/`false`)
 - `START_COMMANDS` (default: `start,/start,!start`)
 - `STOP_COMMANDS` (default: `stop,/stop,!stop`)
 - `STATUS_COMMANDS` (default: `status,/status,!status`)
 
-## 7. Config recomandat pentru 2 persoane (fara export manual repetat)
+Control delete:
+- `DELETE_ORIGINAL_ON_TRANSLATION` (`true`/`false`)
+- `DELETE_ORIGINAL_SOURCE_LANGUAGES` (limbi sursa, separate prin virgula)
+- `DELETE_ORIGINAL_USER_IDS` (ce useri pot declansa delete)
+- Alias vechi suportat: `DELETE_ORIGINAL_RO_TO_EN`
 
-Creeaza fisier local `.env.bot` in radacina proiectului:
+## 7. `.env.bot` recomandat pentru 2 persoane
+
+Creeaza `.env.bot` in radacina proiectului:
 
 ```bash
 DISCORD_BOT_TOKEN=PASTE_DISCORD_BOT_TOKEN
 OPENAI_API_KEY=PASTE_OPENAI_API_KEY
-
-# Mod canal de server (recomandat)
 DISCORD_CHANNEL_ID=1471169419605708938
 
-# Restrange procesarea la cei 2 useri
 DISCORD_ALLOWED_USER_IDS=653582557711040513,938846694286704680
+
+# Rutare limbi
+LANGUAGE_PAIRS=ro:en,en:ro,ru:en,en:ru
+# Optional target global fortat (daca il setezi, pair-urile sunt ignorate)
+# DEFAULT_TARGET_LANGUAGE=en
+# Optional mapare per user (prioritate maxima)
+# DISCORD_USER_TARGET_LANGUAGES=653582557711040513:en,938846694286704680:ro
 
 # Comportament
 REQUIRE_START_COMMAND=true
 BOT_COMMAND_PREFIX=!bot
 REPLY_WITH_QUOTE=true
-DELETE_ORIGINAL_RO_TO_EN=false
-# optional: daca vrei delete doar pentru userul tau
+
+# Delete optional
+DELETE_ORIGINAL_ON_TRANSLATION=false
+# DELETE_ORIGINAL_SOURCE_LANGUAGES=ro
 # DELETE_ORIGINAL_USER_IDS=653582557711040513
 
 OPENAI_MODEL=gpt-4.1-mini
@@ -147,7 +162,7 @@ POLL_INTERVAL_MS=2500
 POLL_LIMIT=50
 ```
 
-Ruleaza botul:
+## 8. Start bot
 
 ```bash
 set -a
@@ -156,52 +171,48 @@ set +a
 node scripts/discord-translate-bot.mjs
 ```
 
-## 8. Comenzi in chat (fara terminal)
+## 9. Comenzi in chat
 
-Botul nu foloseste slash commands Discord native (`/comanda` din API registration).
-Botul foloseste comenzi text in canal:
-
-Comenzi simple:
+Comenzi de baza:
 - `start`
 - `stop`
 - `status`
 
-Comenzi avansate (prefix default `!bot`):
+Comenzi avansate (`!bot` implicit):
 - `!bot help`
 - `!bot params`
 - `!bot start`
 - `!bot stop`
 - `!bot status`
+
+Setari runtime pentru limbi:
+- `!bot set language_pairs ro:en,en:ro,ru:en,en:ru`
+- `!bot set default_target_language en`
+- `!bot set user_target_languages 653582557711040513:en,938846694286704680:ro`
+
+Resetare runtime:
+- `!bot set default_target_language clear`
+- `!bot set language_pairs clear`
+- `!bot set user_target_languages clear`
+
+Alte setari runtime:
 - `!bot set openai_model gpt-4.1-mini`
 - `!bot set poll_interval_ms 2000`
 - `!bot set poll_limit 50`
 - `!bot set reply_with_quote true`
-- `!bot set delete_original_ro_to_en true`
+- `!bot set delete_original_on_translation true`
+- `!bot set delete_original_source_languages ro,ru`
 - `!bot set delete_original_user_ids 653582557711040513`
 - `!bot set allowed_user_ids 653582557711040513,938846694286704680`
 - `!bot set require_start_command true`
-- `!bot set start_commands start,/start,!start`
-- `!bot set stop_commands stop,/stop,!stop`
-- `!bot set status_commands status,/status,!status`
-
-## 9. Flux recomandat de utilizare
-
-1. Pornesti botul in terminal
-2. In canal scrii `start` (daca ai `REQUIRE_START_COMMAND=true`)
-3. Discutia curge normal:
-- tu scrii in romana -> bot raspunde in engleza
-- cealalta persoana scrie in engleza -> bot raspunde in romana
-4. Daca vrei pauza, scrii `stop`
-5. Pentru verificare setari, scrii `!bot params`
 
 ## 10. Troubleshooting
 
-### 10.1 `[discord-translate-bot] missing required env var: DISCORD_BOT_TOKEN`
+### 10.1 `missing required env var`
 
-Cauza: variabila nu este setata in shell curent.
-Solutie:
-- verifica `.env.bot`
-- ruleaza exact:
+Cauza: variabila necesara nu e incarcata in shell-ul curent.
+
+Fix:
 
 ```bash
 set -a
@@ -212,35 +223,36 @@ set +a
 ### 10.2 Discord `403 Missing Access`
 
 Cauza:
-- botul nu are acces la canalul setat in `DISCORD_CHANNEL_ID`
-- ID canal gresit
+- botul nu are acces la canal
+- channel ID gresit
 
-Solutie:
+Fix:
 - verifica channel ID
-- adauga botul in canalul privat
-- verifica permisiuni canal
+- adauga botul in canal
+- verifica permisiunile pe canal
 
 ### 10.3 OpenAI `429 insufficient_quota`
 
-Cauza: fara credit/quota activa pe contul OpenAI.
-Solutie:
-- verifica billing/quota in OpenAI dashboard
+Cauza: fara quota/credit activ.
 
-### 10.4 Botul pare online, dar nu raspunde
+Fix:
+- verifica billing/quota in OpenAI
+
+### 10.4 Botul e online dar nu raspunde
 
 Verifica:
-- `Message Content Intent` activ
-- `DISCORD_ALLOWED_USER_IDS` include ambii useri
-- ai dat `start` daca `REQUIRE_START_COMMAND=true`
-- canalul din `DISCORD_CHANNEL_ID` este exact cel unde scrii
+- `Message Content Intent` = ON
+- user IDs corecte in `DISCORD_ALLOWED_USER_IDS`
+- daca `REQUIRE_START_COMMAND=true`, ai trimis `start`
+- rutarea limbilor este configurata (`language_pairs`, `default_target_language` sau `user_target_languages`)
 
-## 11. Securitate (obligatoriu)
+## 11. Securitate
 
-- Nu publica tokenuri/API keys in chat, screenshot sau git
-- Daca ai expus token/cheie, fa imediat rotate/revoke:
-- Discord bot token: `Bot -> Reset Token`
-- OpenAI key: sterge cheia expusa si creeaza una noua
+- Nu publica tokenuri/API keys in chat, screenshot sau git.
+- Daca au fost expuse, fa rotate imediat:
+- Discord token: `Bot` -> `Reset Token`
+- OpenAI key: revoke + key nou
 
-## 12. Scope-ul acestui proiect
+## 12. Scope proiect
 
-Acest proiect este optimizat pentru comunicare dedicata intre 2 persoane intr-un canal privat Discord, cu traducere bidirectionala EN <-> RO pentru mesaje text.
+Acest proiect este optimizat pentru comunicare dedicata intre 2 persoane intr-un canal privat Discord, cu traducere configurabila din orice limba in orice limba.

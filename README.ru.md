@@ -1,20 +1,19 @@
-# Discord Translation Bot (EN <-> RO) - Для общения двух людей
+# Discord Translation Bot (Любой язык -> Любой язык) - Для общения двух людей
 
 Основной скрипт: `scripts/discord-translate-bot.mjs`
 
-Этот бот сделан для текстового общения между двумя людьми:
-- сообщение на румынском -> ответ на английском
-- сообщение на английском -> ответ на румынском
+Бот сделан для текстовой коммуникации двух людей в Discord.
+Теперь поддерживается перевод между любыми языками, а не только EN <-> RO.
 
 Важно:
-- Бот переводит только текстовые сообщения, не голосовые звонки.
-- Бот должен быть добавлен на сервер/в канал, где нужна перевод.
-- Для приватного сценария на двоих используйте приватный канал сервера (рекомендуется).
+- Только текстовые сообщения (без voice-call/live audio).
+- Бот должен быть добавлен в сервер/канал, где нужен перевод.
+- Рекомендуемый сценарий: приватный канал сервера с 2 пользователями + бот.
 
 ## 1. Требования
 
 - Node.js 18+
-- Токен Discord-бота
+- Discord bot token
 - Активный OpenAI API key
 
 ## 2. Настройка Discord Developer (пошагово)
@@ -24,15 +23,15 @@
 
 ### 2.1 Создать приложение
 
-1. Откройте URL выше.
+1. Откройте портал.
 2. Нажмите `New Application`.
-3. Укажите имя (пример: `Transale`).
+3. Укажите имя приложения.
 
-### 2.2 Создать бота
+### 2.2 Создать bot user
 
-1. Откройте ваше приложение и перейдите во вкладку `Bot`.
+1. Откройте вкладку `Bot`.
 2. Нажмите `Add Bot`.
-3. В секции `Token` нажмите `Reset Token` и `Copy`.
+3. В секции `Token` нажмите `Reset Token` + `Copy`.
 4. Это значение используйте как `DISCORD_BOT_TOKEN`.
 
 ### 2.3 Включить обязательный intent
@@ -40,28 +39,26 @@
 Во вкладке `Bot` включите:
 - `Message Content Intent` = ON
 
-Без этого intent бот не сможет читать текст сообщений.
-
-### 2.4 Сгенерировать ссылку приглашения бота
+### 2.4 Сгенерировать ссылку приглашения
 
 1. Перейдите `OAuth2` -> `URL Generator`.
 2. В `Scopes` отметьте:
 - `bot`
-3. В `Bot Permissions` минимум отметьте:
+3. В `Bot Permissions` минимум:
 - `View Channels`
 - `Read Message History`
 - `Send Messages`
-4. Если нужно удалять исходные сообщения, дополнительно:
+4. Для удаления исходных сообщений дополнительно:
 - `Manage Messages`
-5. Откройте сгенерированную ссылку и добавьте бота на ваш сервер.
+5. Откройте сгенерированную ссылку и добавьте бота на сервер.
 
 Примечания:
 - `Client Secret` этому боту не нужен.
-- Redirect URI для данного сценария не требуется.
+- Redirect URI в этом сценарии не требуется.
 
-## 3. Настройка Discord-сервера для 2 людей
+## 3. Настройка сервера для 2 людей
 
-1. Создайте приватный текстовый канал (например: `#boom-text-comunication`).
+1. Создайте приватный текстовый канал (пример: `#boom-text-comunication`).
 2. Добавьте только:
 - вас
 - второго человека
@@ -70,30 +67,25 @@
 - `View Channel`
 - `Read Message History`
 - `Send Messages`
-- `Manage Messages` (только если включено удаление)
+- `Manage Messages` (если используете delete)
 
-Если бот есть на сервере, но не работает в канале, обычно проблема в правах канала.
-
-## 4. Как получить ID (канал + пользователь)
+## 4. Как получить ID
 
 1. Discord -> `User Settings` -> `Advanced` -> включите `Developer Mode`.
 2. Channel ID: правый клик по каналу -> `Copy Channel ID`.
 3. User ID: правый клик по пользователю -> `Copy User ID`.
 
-Пример (ваш сценарий):
+Примеры (ваш setup):
 - ваш user ID: `653582557711040513`
 - второй user ID: `938846694286704680`
 - пример channel ID: `1471169419605708938`
 
-## 5. Как получить OpenAI API key
+## 5. OpenAI API key
 
-Ключи:
-- `https://platform.openai.com/api-keys`
+- Keys: `https://platform.openai.com/api-keys`
+- Billing/quota: `https://platform.openai.com/settings/organization/billing`
 
-Биллинг/квота:
-- `https://platform.openai.com/settings/organization/billing`
-
-Если видите `insufficient_quota`, ключ может быть валидным, но квота/биллинг не активны.
+Если появляется `insufficient_quota`, ключ может быть валидным, но без активной квоты.
 
 ## 6. Переменные окружения
 
@@ -105,7 +97,20 @@
 - `DISCORD_CHANNEL_ID` (режим канала сервера)
 - `DISCORD_TARGET_USER_ID` (режим DM с ботом)
 
-### 6.2 Опциональные
+### 6.2 Опциональные (маршрутизация языков)
+
+- `LANGUAGE_PAIRS` (по умолчанию: `en:ro,ro:en`)
+- `DEFAULT_TARGET_LANGUAGE` (глобальный целевой язык)
+- `DISCORD_USER_TARGET_LANGUAGES` (карта целевого языка по user)
+
+Приоритет маршрутизации:
+1. `DISCORD_USER_TARGET_LANGUAGES`
+2. `DEFAULT_TARGET_LANGUAGE`
+3. `LANGUAGE_PAIRS` по определенному исходному языку
+
+Если подходящий маршрут не найден, бот не отвечает.
+
+### 6.3 Опциональные (поведение)
 
 - `OPENAI_MODEL` (по умолчанию: `gpt-4.1-mini`)
 - `POLL_INTERVAL_MS` (по умолчанию: `2500`)
@@ -113,12 +118,16 @@
 - `DISCORD_ALLOWED_USER_IDS` (ID через запятую)
 - `BOT_COMMAND_PREFIX` (по умолчанию: `!bot`)
 - `REPLY_WITH_QUOTE` (`true`/`false`)
-- `DELETE_ORIGINAL_RO_TO_EN` (`true`/`false`)
-- `DELETE_ORIGINAL_USER_IDS` (кто может включать удаление исходного RO->EN)
 - `REQUIRE_START_COMMAND` (`true`/`false`)
 - `START_COMMANDS` (по умолчанию: `start,/start,!start`)
 - `STOP_COMMANDS` (по умолчанию: `stop,/stop,!stop`)
 - `STATUS_COMMANDS` (по умолчанию: `status,/status,!status`)
+
+Управление удалением:
+- `DELETE_ORIGINAL_ON_TRANSLATION` (`true`/`false`)
+- `DELETE_ORIGINAL_SOURCE_LANGUAGES` (исходные языки через запятую)
+- `DELETE_ORIGINAL_USER_IDS` (кто может запускать delete)
+- Старый alias поддерживается: `DELETE_ORIGINAL_RO_TO_EN`
 
 ## 7. Рекомендуемый `.env.bot` для 2 людей
 
@@ -127,19 +136,25 @@
 ```bash
 DISCORD_BOT_TOKEN=PASTE_DISCORD_BOT_TOKEN
 OPENAI_API_KEY=PASTE_OPENAI_API_KEY
-
-# Режим канала сервера (рекомендуется)
 DISCORD_CHANNEL_ID=1471169419605708938
 
-# Ограничение только на 2 пользователей
 DISCORD_ALLOWED_USER_IDS=653582557711040513,938846694286704680
+
+# Маршрутизация языков
+LANGUAGE_PAIRS=ro:en,en:ro,ru:en,en:ru
+# Опционально: глобальный целевой язык (если задан, пары игнорируются)
+# DEFAULT_TARGET_LANGUAGE=en
+# Опционально: целевой язык по user (наивысший приоритет)
+# DISCORD_USER_TARGET_LANGUAGES=653582557711040513:en,938846694286704680:ro
 
 # Поведение
 REQUIRE_START_COMMAND=true
 BOT_COMMAND_PREFIX=!bot
 REPLY_WITH_QUOTE=true
-DELETE_ORIGINAL_RO_TO_EN=false
-# Опционально: удалять только ваши сообщения на RO->EN
+
+# Опциональное удаление
+DELETE_ORIGINAL_ON_TRANSLATION=false
+# DELETE_ORIGINAL_SOURCE_LANGUAGES=ro
 # DELETE_ORIGINAL_USER_IDS=653582557711040513
 
 OPENAI_MODEL=gpt-4.1-mini
@@ -156,46 +171,47 @@ set +a
 node scripts/discord-translate-bot.mjs
 ```
 
-## 9. Команды в чате (без постоянного экспорта в терминале)
+## 9. Команды в чате
 
-Простые команды:
+Базовые:
 - `start`
 - `stop`
 - `status`
 
-Расширенные команды (префикс по умолчанию `!bot`):
+Расширенные (`!bot` по умолчанию):
 - `!bot help`
 - `!bot params`
 - `!bot start`
 - `!bot stop`
 - `!bot status`
+
+Runtime настройка языков:
+- `!bot set language_pairs ro:en,en:ro,ru:en,en:ru`
+- `!bot set default_target_language en`
+- `!bot set user_target_languages 653582557711040513:en,938846694286704680:ro`
+
+Сброс runtime значений:
+- `!bot set default_target_language clear`
+- `!bot set language_pairs clear`
+- `!bot set user_target_languages clear`
+
+Другие runtime настройки:
 - `!bot set openai_model gpt-4.1-mini`
 - `!bot set poll_interval_ms 2000`
 - `!bot set poll_limit 50`
 - `!bot set reply_with_quote true`
-- `!bot set delete_original_ro_to_en true`
+- `!bot set delete_original_on_translation true`
+- `!bot set delete_original_source_languages ro,ru`
 - `!bot set delete_original_user_ids 653582557711040513`
 - `!bot set allowed_user_ids 653582557711040513,938846694286704680`
 - `!bot set require_start_command true`
-- `!bot set start_commands start,/start,!start`
-- `!bot set stop_commands stop,/stop,!stop`
-- `!bot set status_commands status,/status,!status`
 
-## 10. Рекомендуемый рабочий поток
+## 10. Troubleshooting
 
-1. Запустите бота в терминале.
-2. В канале отправьте `start` (если `REQUIRE_START_COMMAND=true`).
-3. Общайтесь обычно:
-- румынский -> бот отвечает на английском
-- английский -> бот отвечает на румынском
-4. Для паузы отправьте `stop`.
-5. Для проверки настроек отправьте `!bot params`.
+### 10.1 `missing required env var`
 
-## 11. Диагностика проблем
+Причина: обязательная переменная не загружена в текущий shell.
 
-### 11.1 `[discord-translate-bot] missing required env var: DISCORD_BOT_TOKEN`
-
-Причина: переменная не установлена в текущем shell.
 Решение:
 
 ```bash
@@ -204,37 +220,39 @@ source .env.bot
 set +a
 ```
 
-### 11.2 Discord `403 Missing Access`
+### 10.2 Discord `403 Missing Access`
 
 Причина:
-- у бота нет доступа к `DISCORD_CHANNEL_ID`
+- у бота нет доступа к каналу
 - неверный channel ID
 
 Решение:
 - проверьте channel ID
-- добавьте бота в приватный канал
-- проверьте права канала
+- добавьте бота в канал
+- проверьте права на канал
 
-### 11.3 OpenAI `429 insufficient_quota`
+### 10.3 OpenAI `429 insufficient_quota`
 
 Причина: нет активной квоты/кредита.
-Решение: проверьте биллинг и квоты OpenAI.
 
-### 11.4 Бот онлайн, но не отвечает
+Решение:
+- проверьте billing/quota OpenAI
+
+### 10.4 Бот онлайн, но не отвечает
 
 Проверьте:
-- включен `Message Content Intent`
-- оба user ID есть в `DISCORD_ALLOWED_USER_IDS`
-- вы отправили `start`, если `REQUIRE_START_COMMAND=true`
-- `DISCORD_CHANNEL_ID` совпадает с реальным каналом
+- `Message Content Intent` включен
+- корректные user ID в `DISCORD_ALLOWED_USER_IDS`
+- если `REQUIRE_START_COMMAND=true`, отправлена команда `start`
+- маршрутизация настроена (`language_pairs`, `default_target_language` или `user_target_languages`)
 
-## 12. Безопасность (обязательно)
+## 11. Безопасность
 
-- Не публикуйте токены/API keys в чате, скриншотах и Git.
-- Если токен/ключ раскрыт, сразу сделайте ротацию:
-- Discord: `Bot` -> `Reset Token`
-- OpenAI: отозвать ключ и создать новый
+- Не публикуйте токены/API keys в чатах, скриншотах и Git.
+- При утечке сразу выполните ротацию:
+- Discord token: `Bot` -> `Reset Token`
+- OpenAI key: revoke + создать новый
 
-## 13. Scope проекта
+## 12. Scope проекта
 
-Проект оптимизирован для приватной текстовой коммуникации между двумя людьми в Discord-канале с двусторонним переводом EN <-> RO.
+Проект оптимизирован для приватной коммуникации двух людей в Discord text channel, с настраиваемым переводом из любого языка в любой язык.

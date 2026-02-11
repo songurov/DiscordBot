@@ -1,15 +1,14 @@
-# Discord Translation Bot (EN <-> RO) - Dedicated for Two People
+# Discord Translation Bot (Any Language -> Any Language) - Dedicated for Two People
 
 Main script: `scripts/discord-translate-bot.mjs`
 
-This bot is designed for text communication between two people:
-- Romanian message -> English reply
-- English message -> Romanian reply
+This bot is designed for text communication between two people on Discord.
+It can now translate between any languages, not only EN <-> RO.
 
 Important:
-- This bot translates text messages only, not voice calls/live audio.
-- The bot must be a member of the server/channel where you want translation.
-- For a private two-person workflow, use a private server channel (recommended).
+- Text messages only (no voice-call/live audio translation).
+- Bot must be a member of the server/channel where translation happens.
+- Recommended setup: private server text channel with exactly 2 users + bot.
 
 ## 1. Requirements
 
@@ -22,17 +21,17 @@ Important:
 Official portal:
 - `https://discord.com/developers/applications`
 
-### 2.1 Create the application
+### 2.1 Create application
 
-1. Open the URL above.
+1. Open the portal.
 2. Click `New Application`.
-3. Enter a name (example: `Transale`).
+3. Enter app name.
 
-### 2.2 Create the bot user
+### 2.2 Create bot user
 
-1. Open your app and go to the `Bot` tab.
+1. Open `Bot` tab.
 2. Click `Add Bot`.
-3. In `Token`, click `Reset Token` and `Copy`.
+3. In `Token`, click `Reset Token` + `Copy`.
 4. Use this value as `DISCORD_BOT_TOKEN`.
 
 ### 2.3 Enable required intent
@@ -40,41 +39,37 @@ Official portal:
 In `Bot` tab, enable:
 - `Message Content Intent` = ON
 
-Without this intent, the bot cannot read message content.
+### 2.4 Generate invite URL
 
-### 2.4 Generate bot invite URL
-
-1. Go to `OAuth2` -> `URL Generator`.
+1. Open `OAuth2` -> `URL Generator`.
 2. In `Scopes`, check:
 - `bot`
-3. In `Bot Permissions`, check at minimum:
+3. In `Bot Permissions`, check minimum:
 - `View Channels`
 - `Read Message History`
 - `Send Messages`
 4. If you want original-message deletion, also check:
 - `Manage Messages`
-5. Open the generated URL and add the bot to your server.
+5. Open generated URL and add bot to your server.
 
 Notes:
 - `Client Secret` is not used by this bot.
 - Redirect URI is not required for this setup.
 
-## 3. Discord Server Setup for Two People
+## 3. Server Setup for Two People
 
 1. Create a private text channel (example: `#boom-text-comunication`).
 2. Add only:
 - You
-- The second person
-- The bot
-3. Ensure bot channel permissions:
+- Second person
+- Bot
+3. Ensure bot permissions in that channel:
 - `View Channel`
 - `Read Message History`
 - `Send Messages`
-- `Manage Messages` (only if deletion is enabled)
+- `Manage Messages` (only if deletion enabled)
 
-If the bot is in the server but not visible/working in the channel, it is usually a channel permission issue.
-
-## 4. How to Get IDs (Channel + User)
+## 4. How to Get IDs
 
 1. Discord -> `User Settings` -> `Advanced` -> enable `Developer Mode`.
 2. Channel ID: right click channel -> `Copy Channel ID`.
@@ -83,17 +78,14 @@ If the bot is in the server but not visible/working in the channel, it is usuall
 Example IDs (your setup):
 - your user ID: `653582557711040513`
 - second user ID: `938846694286704680`
-- example channel ID: `1471169419605708938`
+- channel example: `1471169419605708938`
 
-## 5. How to Get OpenAI API Key
+## 5. OpenAI API Key
 
-Key management:
-- `https://platform.openai.com/api-keys`
+- Keys: `https://platform.openai.com/api-keys`
+- Billing/quota: `https://platform.openai.com/settings/organization/billing`
 
-Billing/quota:
-- `https://platform.openai.com/settings/organization/billing`
-
-If you get `insufficient_quota`, your key may be valid but billing/quota is not active.
+If you see `insufficient_quota`, key may be valid but quota is not active.
 
 ## 6. Environment Variables
 
@@ -105,7 +97,20 @@ If you get `insufficient_quota`, your key may be valid but billing/quota is not 
 - `DISCORD_CHANNEL_ID` (server channel mode)
 - `DISCORD_TARGET_USER_ID` (DM-with-bot mode)
 
-### 6.2 Optional
+### 6.2 Optional (core routing)
+
+- `LANGUAGE_PAIRS` (default: `en:ro,ro:en`)
+- `DEFAULT_TARGET_LANGUAGE` (optional global forced target)
+- `DISCORD_USER_TARGET_LANGUAGES` (per-user target language map)
+
+Routing priority:
+1. Per-user target (`DISCORD_USER_TARGET_LANGUAGES`)
+2. `DEFAULT_TARGET_LANGUAGE`
+3. `LANGUAGE_PAIRS` based on detected source language
+
+If no route matches, bot does not reply.
+
+### 6.3 Optional (behavior)
 
 - `OPENAI_MODEL` (default: `gpt-4.1-mini`)
 - `POLL_INTERVAL_MS` (default: `2500`)
@@ -113,12 +118,16 @@ If you get `insufficient_quota`, your key may be valid but billing/quota is not 
 - `DISCORD_ALLOWED_USER_IDS` (comma-separated user IDs)
 - `BOT_COMMAND_PREFIX` (default: `!bot`)
 - `REPLY_WITH_QUOTE` (`true`/`false`)
-- `DELETE_ORIGINAL_RO_TO_EN` (`true`/`false`)
-- `DELETE_ORIGINAL_USER_IDS` (who can trigger RO->EN original delete)
 - `REQUIRE_START_COMMAND` (`true`/`false`)
 - `START_COMMANDS` (default: `start,/start,!start`)
 - `STOP_COMMANDS` (default: `stop,/stop,!stop`)
 - `STATUS_COMMANDS` (default: `status,/status,!status`)
+
+Deletion controls:
+- `DELETE_ORIGINAL_ON_TRANSLATION` (`true`/`false`)
+- `DELETE_ORIGINAL_SOURCE_LANGUAGES` (comma-separated source languages)
+- `DELETE_ORIGINAL_USER_IDS` (who can trigger deletion)
+- Legacy alias still supported: `DELETE_ORIGINAL_RO_TO_EN`
 
 ## 7. Recommended `.env.bot` for Two People
 
@@ -127,19 +136,25 @@ Create `.env.bot` in project root:
 ```bash
 DISCORD_BOT_TOKEN=PASTE_DISCORD_BOT_TOKEN
 OPENAI_API_KEY=PASTE_OPENAI_API_KEY
-
-# Server channel mode (recommended)
 DISCORD_CHANNEL_ID=1471169419605708938
 
-# Restrict processing to your 2 users
 DISCORD_ALLOWED_USER_IDS=653582557711040513,938846694286704680
+
+# Routing options
+LANGUAGE_PAIRS=ro:en,en:ro,ru:en,en:ru
+# Optional global forced target (if set, pairs are ignored)
+# DEFAULT_TARGET_LANGUAGE=en
+# Optional per-user target language (highest priority)
+# DISCORD_USER_TARGET_LANGUAGES=653582557711040513:en,938846694286704680:ro
 
 # Behavior
 REQUIRE_START_COMMAND=true
 BOT_COMMAND_PREFIX=!bot
 REPLY_WITH_QUOTE=true
-DELETE_ORIGINAL_RO_TO_EN=false
-# Optional: only your own RO messages get deleted
+
+# Optional deletion
+DELETE_ORIGINAL_ON_TRANSLATION=false
+# DELETE_ORIGINAL_SOURCE_LANGUAGES=ro
 # DELETE_ORIGINAL_USER_IDS=653582557711040513
 
 OPENAI_MODEL=gpt-4.1-mini
@@ -147,7 +162,7 @@ POLL_INTERVAL_MS=2500
 POLL_LIMIT=50
 ```
 
-## 8. Start the Bot
+## 8. Start Bot
 
 ```bash
 set -a
@@ -156,46 +171,47 @@ set +a
 node scripts/discord-translate-bot.mjs
 ```
 
-## 9. Chat Commands (No Terminal Exports Needed After Start)
+## 9. Chat Commands
 
-Simple commands:
+Basic:
 - `start`
 - `stop`
 - `status`
 
-Advanced commands (default prefix `!bot`):
+Advanced (`!bot` by default):
 - `!bot help`
 - `!bot params`
 - `!bot start`
 - `!bot stop`
 - `!bot status`
+
+Runtime language routing:
+- `!bot set language_pairs ro:en,en:ro,ru:en,en:ru`
+- `!bot set default_target_language en`
+- `!bot set user_target_languages 653582557711040513:en,938846694286704680:ro`
+
+Clear runtime routing values:
+- `!bot set default_target_language clear`
+- `!bot set language_pairs clear`
+- `!bot set user_target_languages clear`
+
+Other runtime settings:
 - `!bot set openai_model gpt-4.1-mini`
 - `!bot set poll_interval_ms 2000`
 - `!bot set poll_limit 50`
 - `!bot set reply_with_quote true`
-- `!bot set delete_original_ro_to_en true`
+- `!bot set delete_original_on_translation true`
+- `!bot set delete_original_source_languages ro,ru`
 - `!bot set delete_original_user_ids 653582557711040513`
 - `!bot set allowed_user_ids 653582557711040513,938846694286704680`
 - `!bot set require_start_command true`
-- `!bot set start_commands start,/start,!start`
-- `!bot set stop_commands stop,/stop,!stop`
-- `!bot set status_commands status,/status,!status`
 
-## 10. Recommended Usage Flow
+## 10. Troubleshooting
 
-1. Start bot in terminal.
-2. In Discord channel, send `start` (if `REQUIRE_START_COMMAND=true`).
-3. Talk normally:
-- Romanian -> bot replies English
-- English -> bot replies Romanian
-4. Send `stop` when needed.
-5. Send `!bot params` to check active runtime settings.
+### 10.1 `missing required env var`
 
-## 11. Troubleshooting
+Cause: required variable not loaded in current shell.
 
-### 11.1 `[discord-translate-bot] missing required env var: DISCORD_BOT_TOKEN`
-
-Cause: variable not set in current shell.
 Fix:
 
 ```bash
@@ -204,37 +220,39 @@ source .env.bot
 set +a
 ```
 
-### 11.2 Discord `403 Missing Access`
+### 10.2 Discord `403 Missing Access`
 
 Cause:
-- bot has no access to `DISCORD_CHANNEL_ID`
+- bot has no access to target channel
 - wrong channel ID
 
 Fix:
 - verify channel ID
-- add bot to that private channel
+- add bot to channel
 - verify channel permissions
 
-### 11.3 OpenAI `429 insufficient_quota`
+### 10.3 OpenAI `429 insufficient_quota`
 
 Cause: no active credit/quota.
-Fix: check OpenAI billing/quota settings.
 
-### 11.4 Bot is online but does not reply
+Fix:
+- check OpenAI billing/quota
+
+### 10.4 Bot online but no replies
 
 Check:
-- `Message Content Intent` enabled
-- both users are in `DISCORD_ALLOWED_USER_IDS`
-- you sent `start` when `REQUIRE_START_COMMAND=true`
-- `DISCORD_CHANNEL_ID` matches the actual channel
+- `Message Content Intent` is ON
+- user IDs are correct in `DISCORD_ALLOWED_USER_IDS`
+- if `REQUIRE_START_COMMAND=true`, you sent `start`
+- routing is configured (`language_pairs`, `default_target_language`, or `user_target_languages`)
 
-## 12. Security (Mandatory)
+## 11. Security
 
-- Do not publish tokens/API keys in chat, screenshots, or Git.
+- Never post tokens/API keys in chat/screenshots/git.
 - If exposed, rotate immediately:
-- Discord: `Bot` -> `Reset Token`
-- OpenAI: revoke exposed key and create a new one
+- Discord token: `Bot` -> `Reset Token`
+- OpenAI key: revoke and recreate
 
-## 13. Project Scope
+## 12. Project Scope
 
-This project is optimized for dedicated two-person communication in a private Discord text channel, with bidirectional EN <-> RO translation.
+This project is optimized for dedicated two-person communication in a private Discord text channel, with configurable any-language-to-any-language translation.

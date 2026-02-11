@@ -1,6 +1,6 @@
 # Discord Translation Bot - Documentation Index
 
-This repository contains the same setup guide in 3 languages.
+This repository contains the same full guide in 3 languages.
 
 - English: `README.en.md`
 - Romanian: `README.ro.md`
@@ -8,7 +8,7 @@ This repository contains the same setup guide in 3 languages.
 
 Project purpose:
 - dedicated Discord text translation bot for two people
-- bidirectional translation EN <-> RO
+- configurable any-language -> any-language routing
 - optimized for private server channels
 
 Main script:

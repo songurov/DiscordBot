@@ -13,8 +13,21 @@ let pollIntervalMs = parsePositiveInt(process.env.POLL_INTERVAL_MS, 2500);
 let pollLimit = parsePositiveInt(process.env.POLL_LIMIT, 50);
 let allowedUserIds = parseAllowedUserIds(process.env.DISCORD_ALLOWED_USER_IDS);
 let replyWithQuote = parseBoolean(process.env.REPLY_WITH_QUOTE, false);
-let deleteOriginalRoToEn = parseBoolean(process.env.DELETE_ORIGINAL_RO_TO_EN, false);
+
+const legacyDeleteFlag = parseBoolean(process.env.DELETE_ORIGINAL_RO_TO_EN, false);
+let deleteOriginalOnTranslation = parseBoolean(
+  process.env.DELETE_ORIGINAL_ON_TRANSLATION,
+  legacyDeleteFlag,
+);
 let deleteOriginalUserIds = parseAllowedUserIds(process.env.DELETE_ORIGINAL_USER_IDS);
+let deleteOriginalSourceLanguages = parseLanguageList(
+  process.env.DELETE_ORIGINAL_SOURCE_LANGUAGES || (legacyDeleteFlag ? "ro" : ""),
+);
+
+let languagePairs = parseLanguagePairs(process.env.LANGUAGE_PAIRS || "en:ro,ro:en");
+let defaultTargetLanguage = normalizeLanguageToken(process.env.DEFAULT_TARGET_LANGUAGE || "");
+let userTargetLanguages = parseUserTargetLanguages(process.env.DISCORD_USER_TARGET_LANGUAGES);
+
 let requireStartCommand = parseBoolean(process.env.REQUIRE_START_COMMAND, false);
 let startCommands = parseCommandList(process.env.START_COMMANDS || "start,/start,!start");
 let stopCommands = parseCommandList(process.env.STOP_COMMANDS || "stop,/stop,!stop");
@@ -29,13 +42,14 @@ let translationEnabled = !requireStartCommand;
 const systemPrompt = [
   "You are a strict translation router.",
   "Return ONLY valid JSON (no markdown) with this exact schema:",
-  '{"source_language":"en|ro|other","translated_text":"string","should_reply":true|false}',
+  '{"detected_language":"string","target_language":"string","translated_text":"string","should_reply":true|false}',
   "Rules:",
-  "1) If input is mostly English, translate to Romanian (source_language=en, should_reply=true).",
-  "2) If input is mostly Romanian, rewrite/translate to natural English (source_language=ro, should_reply=true).",
-  "3) If language is unclear/other, set source_language=other, should_reply=false, translated_text=\"\".",
-  "4) Keep links, names, numbers, and formatting intent.",
-  "5) Do not add explanations.",
+  "1) Detect input language and return a concise lowercase language token (for example: en, ro, ru, fr, de, es, pt-br).",
+  "2) Read routing_config from user message JSON. Priority: forced_target_language first; if empty then use language_pairs[detected_language].",
+  '3) If target language cannot be resolved, set should_reply=false and translated_text="".',
+  '4) If detected_language equals target_language, set should_reply=false and translated_text="".',
+  "5) If should_reply=true, translate naturally into target_language.",
+  "6) Keep links, names, numbers, and formatting intent.",
 ].join(" ");
 
 async function main() {
@@ -60,6 +74,10 @@ async function main() {
   console.log(
     `[discord-translate-bot] connected as ${bot.username} (${bot.id}), channel=${activeChannelId}, model=${openAiModel}`,
   );
+  console.log(
+    `[discord-translate-bot] routing default_target=${defaultTargetLanguage || "-"}, language_pairs=${languagePairsToCsv(languagePairs) || "-"}, user_targets=${userTargetsToCsv(userTargetLanguages) || "-"}`,
+  );
+
   if (allowedUserIds.size > 0) {
     console.log(
       `[discord-translate-bot] strict-user-mode enabled, allowed_users=${Array.from(allowedUserIds).join(",")}`,
@@ -68,12 +86,18 @@ async function main() {
   if (replyWithQuote) {
     console.log("[discord-translate-bot] reply-with-quote enabled");
   }
-  if (deleteOriginalRoToEn) {
-    const scope =
+  if (deleteOriginalOnTranslation) {
+    const userScope =
       deleteOriginalUserIds.size > 0
         ? Array.from(deleteOriginalUserIds).join(",")
         : "all matched users";
-    console.log(`[discord-translate-bot] delete-original enabled for RO->EN, users=${scope}`);
+    const langScope =
+      deleteOriginalSourceLanguages.size > 0
+        ? Array.from(deleteOriginalSourceLanguages).join(",")
+        : "all source languages";
+    console.log(
+      `[discord-translate-bot] delete-original enabled, users=${userScope}, source_languages=${langScope}`,
+    );
   }
   if (requireStartCommand) {
     console.log(
@@ -115,7 +139,8 @@ async function handleMessage(message) {
   if (await maybeHandleControlCommand(message, originalText)) return;
   if (!translationEnabled) return;
 
-  const translated = await translateText(originalText);
+  const forcedTargetLanguage = resolveForcedTargetLanguage(message.author?.id || "");
+  const translated = await translateText(originalText, forcedTargetLanguage);
 
   if (!translated.should_reply) return;
   if (!translated.translated_text) return;
@@ -138,7 +163,7 @@ async function handleMessage(message) {
 
   await discordRequest("POST", `/channels/${activeChannelId}/messages`, payload);
 
-  if (shouldDeleteOriginalMessage(message, translated.source_language)) {
+  if (shouldDeleteOriginalMessage(message, translated.detected_language)) {
     await deleteOriginalMessageSafe(message.id);
   }
 }
@@ -166,9 +191,7 @@ async function maybeHandleControlCommand(message, text) {
     return true;
   }
   if (statusCommands.has(command)) {
-    await sendControlMessage(
-      `Translation status: ${translationEnabled ? "ON" : "OFF"}.`,
-    );
+    await sendControlMessage(`Translation status: ${translationEnabled ? "ON" : "OFF"}.`);
     return true;
   }
 
@@ -208,7 +231,7 @@ async function handleBotPrefixedCommand(rawArgs) {
     const value = args.slice(2).join(" ").trim();
     if (!key || !value) {
       await sendControlMessage(
-        `Usage: ${BOT_COMMAND_PREFIX} set <key> <value>. Example: ${BOT_COMMAND_PREFIX} set reply_with_quote true`,
+        `Usage: ${BOT_COMMAND_PREFIX} set <key> <value>. Example: ${BOT_COMMAND_PREFIX} set language_pairs ro:en,en:ro`,
       );
       return;
     }
@@ -239,8 +262,12 @@ function renderConfigStatus() {
     `model=${openAiModel}`,
     `poll_interval_ms=${pollIntervalMs}`,
     `poll_limit=${pollLimit}`,
+    `default_target_language=${defaultTargetLanguage || "-"}`,
+    `language_pairs=${languagePairsToCsv(languagePairs) || "-"}`,
+    `user_target_languages=${userTargetsToCsv(userTargetLanguages) || "-"}`,
     `reply_with_quote=${replyWithQuote}`,
-    `delete_original_ro_to_en=${deleteOriginalRoToEn}`,
+    `delete_original_on_translation=${deleteOriginalOnTranslation}`,
+    `delete_original_source_languages=${setToCsv(deleteOriginalSourceLanguages) || "-"}`,
     `require_start_command=${requireStartCommand}`,
     `allowed_user_ids=${setToCsv(allowedUserIds) || "-"}`,
     `delete_original_user_ids=${setToCsv(deleteOriginalUserIds) || "-"}`,
@@ -262,12 +289,30 @@ function applyRuntimeSetting(key, value) {
       case "poll_limit":
         pollLimit = parsePositiveIntStrict(value);
         return { ok: true, value: String(pollLimit) };
+      case "default_target_language":
+        defaultTargetLanguage = parseLanguageTokenStrict(value, true);
+        return { ok: true, value: defaultTargetLanguage || "-" };
+      case "language_pairs":
+        languagePairs = parseLanguagePairsStrict(value, true);
+        return { ok: true, value: languagePairsToCsv(languagePairs) || "-" };
+      case "user_target_languages":
+        userTargetLanguages = parseUserTargetLanguagesStrict(value, true);
+        return { ok: true, value: userTargetsToCsv(userTargetLanguages) || "-" };
       case "reply_with_quote":
         replyWithQuote = parseBooleanStrict(value);
         return { ok: true, value: String(replyWithQuote) };
+      case "delete_original_on_translation":
+        deleteOriginalOnTranslation = parseBooleanStrict(value);
+        return { ok: true, value: String(deleteOriginalOnTranslation) };
+      case "delete_original_source_languages":
+        deleteOriginalSourceLanguages = parseLanguageListStrict(value, true);
+        return { ok: true, value: setToCsv(deleteOriginalSourceLanguages) || "-" };
       case "delete_original_ro_to_en":
-        deleteOriginalRoToEn = parseBooleanStrict(value);
-        return { ok: true, value: String(deleteOriginalRoToEn) };
+        deleteOriginalOnTranslation = parseBooleanStrict(value);
+        if (deleteOriginalOnTranslation && deleteOriginalSourceLanguages.size === 0) {
+          deleteOriginalSourceLanguages = new Set(["ro"]);
+        }
+        return { ok: true, value: String(deleteOriginalOnTranslation) };
       case "require_start_command":
         requireStartCommand = parseBooleanStrict(value);
         if (requireStartCommand) translationEnabled = false;
@@ -291,7 +336,7 @@ function applyRuntimeSetting(key, value) {
         return {
           ok: false,
           error:
-            "key not supported. Use: openai_model, poll_interval_ms, poll_limit, reply_with_quote, delete_original_ro_to_en, require_start_command, allowed_user_ids, delete_original_user_ids, start_commands, stop_commands, status_commands",
+            "key not supported. Use: openai_model, poll_interval_ms, poll_limit, default_target_language, language_pairs, user_target_languages, reply_with_quote, delete_original_on_translation, delete_original_source_languages, delete_original_ro_to_en, require_start_command, allowed_user_ids, delete_original_user_ids, start_commands, stop_commands, status_commands",
         };
     }
   } catch (error) {
@@ -299,36 +344,73 @@ function applyRuntimeSetting(key, value) {
   }
 }
 
-async function translateText(text) {
+async function translateText(text, forcedTargetLanguage) {
   const response = await openAiRequest("POST", "/chat/completions", {
     model: openAiModel,
     temperature: 0,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },
-      { role: "user", content: text },
+      {
+        role: "user",
+        content: JSON.stringify({
+          routing_config: {
+            forced_target_language: forcedTargetLanguage || "",
+            language_pairs: Object.fromEntries(languagePairs),
+          },
+          text,
+        }),
+      },
     ],
   });
 
   const content = response?.choices?.[0]?.message?.content || "";
   const parsed = parseJsonPayload(content);
 
-  const sourceLanguage = normalizeSourceLanguage(parsed.source_language);
+  const detectedLanguage = normalizeDetectedLanguage(parsed.detected_language);
+  const targetLanguage = resolveTargetLanguage(detectedLanguage, forcedTargetLanguage);
   const translatedText =
     typeof parsed.translated_text === "string" ? parsed.translated_text.trim() : "";
-  const shouldReply = Boolean(parsed.should_reply) && (sourceLanguage === "en" || sourceLanguage === "ro");
+
+  const shouldReply =
+    Boolean(parsed.should_reply) &&
+    Boolean(translatedText) &&
+    Boolean(targetLanguage) &&
+    detectedLanguage !== "unknown" &&
+    detectedLanguage !== targetLanguage;
 
   return {
-    source_language: sourceLanguage,
+    detected_language: detectedLanguage,
+    target_language: targetLanguage,
     translated_text: translatedText,
     should_reply: shouldReply,
   };
 }
 
+function resolveForcedTargetLanguage(authorId) {
+  const perUserTarget = userTargetLanguages.get(authorId);
+  if (perUserTarget) return perUserTarget;
+  if (defaultTargetLanguage) return defaultTargetLanguage;
+  return "";
+}
+
+function resolveTargetLanguage(detectedLanguage, forcedTargetLanguage) {
+  if (forcedTargetLanguage) return forcedTargetLanguage;
+  if (detectedLanguage !== "unknown" && languagePairs.has(detectedLanguage)) {
+    return languagePairs.get(detectedLanguage) || "";
+  }
+  return "";
+}
+
 function parseJsonPayload(raw) {
   const trimmed = String(raw || "").trim();
   if (!trimmed) {
-    return { source_language: "other", translated_text: "", should_reply: false };
+    return {
+      detected_language: "unknown",
+      target_language: "",
+      translated_text: "",
+      should_reply: false,
+    };
   }
 
   const withoutFences = trimmed
@@ -340,14 +422,19 @@ function parseJsonPayload(raw) {
   try {
     return JSON.parse(withoutFences);
   } catch {
-    return { source_language: "other", translated_text: "", should_reply: false };
+    return {
+      detected_language: "unknown",
+      target_language: "",
+      translated_text: "",
+      should_reply: false,
+    };
   }
 }
 
-function normalizeSourceLanguage(value) {
-  if (value === "en") return "en";
-  if (value === "ro") return "ro";
-  return "other";
+function normalizeDetectedLanguage(value) {
+  const normalized = normalizeLanguageToken(value);
+  if (!normalized) return "unknown";
+  return normalized;
 }
 
 async function fetchMessagesAfter(afterId) {
@@ -484,6 +571,156 @@ function parseCommandList(value) {
   );
 }
 
+function parseLanguagePairs(value) {
+  const map = new Map();
+  const items = String(value || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  for (const item of items) {
+    const [sourceRaw, targetRaw] = item.split(":", 2).map((v) => String(v || "").trim());
+    const source = normalizeLanguageToken(sourceRaw);
+    const target = normalizeLanguageToken(targetRaw);
+    if (!source || !target || source === target) continue;
+    map.set(source, target);
+  }
+
+  return map;
+}
+
+function parseLanguagePairsStrict(value, allowClear) {
+  if (allowClear && isClearValue(value)) return new Map();
+
+  const map = new Map();
+  const items = String(value || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  if (items.length === 0) {
+    throw new Error("value must contain at least one pair: source:target");
+  }
+
+  for (const item of items) {
+    const parts = item.split(":", 2);
+    if (parts.length !== 2) {
+      throw new Error("pair format must be source:target,source:target");
+    }
+    const source = parseLanguageTokenStrict(parts[0]);
+    const target = parseLanguageTokenStrict(parts[1]);
+    if (source === target) {
+      throw new Error("source and target language must be different");
+    }
+    map.set(source, target);
+  }
+
+  return map;
+}
+
+function parseLanguageList(value) {
+  const set = new Set();
+  const items = String(value || "")
+    .split(",")
+    .map((v) => normalizeLanguageToken(v))
+    .filter(Boolean);
+
+  for (const item of items) {
+    set.add(item);
+  }
+
+  return set;
+}
+
+function parseLanguageListStrict(value, allowClear) {
+  if (allowClear && isClearValue(value)) return new Set();
+  const items = String(value || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  if (items.length === 0) {
+    throw new Error("value must contain one or more languages separated by comma");
+  }
+
+  const set = new Set();
+  for (const item of items) {
+    set.add(parseLanguageTokenStrict(item));
+  }
+
+  return set;
+}
+
+function parseUserTargetLanguages(value) {
+  const map = new Map();
+  const items = String(value || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  for (const item of items) {
+    const [userIdRaw, languageRaw] = item.split(":", 2).map((v) => String(v || "").trim());
+    if (!isDiscordId(userIdRaw)) continue;
+    const language = normalizeLanguageToken(languageRaw);
+    if (!language) continue;
+    map.set(userIdRaw, language);
+  }
+
+  return map;
+}
+
+function parseUserTargetLanguagesStrict(value, allowClear) {
+  if (allowClear && isClearValue(value)) return new Map();
+
+  const map = new Map();
+  const items = String(value || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  if (items.length === 0) {
+    throw new Error("value must contain one or more entries: userId:language");
+  }
+
+  for (const item of items) {
+    const parts = item.split(":", 2);
+    if (parts.length !== 2) {
+      throw new Error("value format must be userId:language,userId:language");
+    }
+
+    const userId = String(parts[0] || "").trim();
+    const language = parseLanguageTokenStrict(parts[1]);
+
+    if (!isDiscordId(userId)) {
+      throw new Error("invalid Discord user id");
+    }
+
+    map.set(userId, language);
+  }
+
+  return map;
+}
+
+function parseLanguageTokenStrict(value, allowClear) {
+  if (allowClear && isClearValue(value)) return "";
+  const normalized = normalizeLanguageToken(value);
+  if (!normalized) {
+    throw new Error("language must use letters/numbers/hyphen, example: en, ro, ru, pt-br");
+  }
+  return normalized;
+}
+
+function normalizeLanguageToken(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-");
+
+  if (!normalized) return "";
+  if (!/^[a-z][a-z0-9-]{1,31}$/.test(normalized)) return "";
+  return normalized;
+}
+
 function normalizeCommand(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -492,9 +729,29 @@ function setToCsv(set) {
   return Array.from(set || []).join(",");
 }
 
+function languagePairsToCsv(map) {
+  return Array.from(map.entries())
+    .map(([source, target]) => `${source}:${target}`)
+    .join(",");
+}
+
+function userTargetsToCsv(map) {
+  return Array.from(map.entries())
+    .map(([userId, language]) => `${userId}:${language}`)
+    .join(",");
+}
+
+function isClearValue(value) {
+  const normalized = normalizeCommand(value);
+  return normalized === "" || normalized === "-" || normalized === "none" || normalized === "clear";
+}
+
 function shouldDeleteOriginalMessage(message, sourceLanguage) {
-  if (!deleteOriginalRoToEn) return false;
-  if (sourceLanguage !== "ro") return false;
+  if (!deleteOriginalOnTranslation) return false;
+  if (deleteOriginalSourceLanguages.size > 0 && !deleteOriginalSourceLanguages.has(sourceLanguage)) {
+    return false;
+  }
+
   const authorId = message?.author?.id || "";
   if (deleteOriginalUserIds.size === 0) return true;
   return deleteOriginalUserIds.has(authorId);
