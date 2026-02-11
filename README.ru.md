@@ -245,6 +245,8 @@ set +a
 - корректные user ID в `DISCORD_ALLOWED_USER_IDS`
 - если `REQUIRE_START_COMMAND=true`, отправлена команда `start`
 - маршрутизация настроена (`language_pairs`, `default_target_language` или `user_target_languages`)
+- после `trans set channel <id>` (или других изменений маршрутизации) выполните `trans restart`, чтобы запущенный процесс применил новый конфиг
+- если бот отображается Offline в списке участников Discord, проверяйте реальное состояние через `trans status` и `trans logs` (в режиме REST polling онлайн-статус может не отображаться)
 
 ## 11. Безопасность
 

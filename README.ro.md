@@ -245,6 +245,8 @@ Verifica:
 - user IDs corecte in `DISCORD_ALLOWED_USER_IDS`
 - daca `REQUIRE_START_COMMAND=true`, ai trimis `start`
 - rutarea limbilor este configurata (`language_pairs`, `default_target_language` sau `user_target_languages`)
+- dupa `trans set channel <id>` (sau alte schimbari de rutare), ruleaza `trans restart` ca procesul pornit sa incarce noua configuratie
+- daca botul apare Offline in lista de membri Discord, verifica starea reala cu `trans status` si `trans logs` (modul REST polling poate sa nu afiseze prezenta online)
 
 ## 11. Securitate
 

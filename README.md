@@ -47,6 +47,12 @@ Notes:
 ./trans logs 100
 ```
 
+## 4.1 Important runtime notes
+
+- If you run `trans set channel <id>` (or change other routing values), run `trans restart` to apply new config to the running process.
+- If `REQUIRE_START_COMMAND=true`, translation stays OFF until you send `start` in the target channel.
+- Bot can appear Offline in Discord member list (REST polling mode). Check real state with `trans status` and `trans logs`.
+
 ## 5. Global command in system
 
 ### Linux

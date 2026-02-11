@@ -245,6 +245,8 @@ Check:
 - user IDs are correct in `DISCORD_ALLOWED_USER_IDS`
 - if `REQUIRE_START_COMMAND=true`, you sent `start`
 - routing is configured (`language_pairs`, `default_target_language`, or `user_target_languages`)
+- after `trans set channel <id>` (or route changes), run `trans restart` so the running process loads new config
+- if bot appears Offline in Discord member list, verify with `trans status` and `trans logs` (REST polling mode may not show online presence)
 
 ## 11. Security
 
