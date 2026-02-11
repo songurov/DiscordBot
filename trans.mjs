@@ -30,6 +30,8 @@ function usage() {
   trans set language-pairs <src:dst,src:dst,...|clear>
   trans set default-target <code|clear>
   trans set user-targets <userId:lang,userId:lang|clear>
+  trans set openai-key <api_key>
+  trans set discord-token <bot_token>
 
 Notes:
   - Config file: .trans.env (auto-created from .trans.env.example if missing)
@@ -566,6 +568,20 @@ function setUserTargetsCmd(value) {
   info(`updated DISCORD_USER_TARGET_LANGUAGES=${normalized}`);
 }
 
+function setOpenAiKeyCmd(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) fail("openai key cannot be empty");
+  upsertConfigValue("OPENAI_API_KEY", normalized);
+  info("updated OPENAI_API_KEY");
+}
+
+function setDiscordTokenCmd(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) fail("discord token cannot be empty");
+  upsertConfigValue("DISCORD_BOT_TOKEN", normalized);
+  info("updated DISCORD_BOT_TOKEN");
+}
+
 function setCmd(key, value) {
   ensureConfigFile();
 
@@ -600,6 +616,17 @@ function setCmd(key, value) {
       return;
     case "user-targets":
       setUserTargetsCmd(value);
+      return;
+    case "openai-key":
+    case "openai":
+    case "openai_api_key":
+      setOpenAiKeyCmd(value);
+      return;
+    case "discord-token":
+    case "discord":
+    case "bot-token":
+    case "discord_bot_token":
+      setDiscordTokenCmd(value);
       return;
     default:
       fail(`unknown set key: ${key}`);
