@@ -180,6 +180,7 @@ trans voice logs 80
 ```bash
 trans voice init
 trans voice start|stop|restart|status|show|logs
+trans voice kick|leave
 trans voice set channel <voice_channel_id>
 trans voice set control-channel <text_channel_id|clear>
 trans voice set users <id1,id2,...>
@@ -190,9 +191,31 @@ trans voice set default-target <code|clear>
 trans voice set user-targets <userId:lang,userId:lang|clear>
 trans voice set openai-key <api_key>
 trans voice set discord-token <bot_token>
+trans voice set model <openai_chat_model>
+trans voice set transcribe-model <openai_stt_model>
+trans voice set tts-model <openai_tts_model>
+trans voice set tts-voice <voice_name>
+trans voice set tts-format <opus|mp3|wav|aac|flac|pcm>
+trans voice set require-start-command <true|false>
+trans voice set silence-ms <number>
+trans voice set min-bytes <number>
+trans voice set max-bytes <number>
+trans voice set text-feedback <true|false>
 ```
 
-### 8.7 Discord permissions/intents required
+### 8.7 Fast voice profile (lower latency)
+
+```bash
+trans voice set transcribe-model gpt-4o-mini-transcribe
+trans voice set tts-model gpt-4o-mini-tts
+trans voice set model gpt-4.1-mini
+trans voice set silence-ms 600
+trans voice set min-bytes 48000
+trans voice set require-start-command false
+trans voice restart
+```
+
+### 8.8 Discord permissions/intents required
 
 - `Message Content Intent` enabled in Discord Developer Portal.
 - In server/channel permissions bot needs:

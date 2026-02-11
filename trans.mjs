@@ -17,6 +17,7 @@ const VOICE_CONFIG_EXAMPLE = path.join(ROOT_DIR, ".vtrans.env.example");
 const VOICE_PID_FILE = process.env.VTRANS_PID_FILE || path.join(ROOT_DIR, ".vtrans.pid");
 const VOICE_LOG_FILE = process.env.VTRANS_LOG_FILE || path.join(ROOT_DIR, ".vtrans.log");
 const VOICE_BOT_SCRIPT = path.join(ROOT_DIR, "scripts", "discord-voice-translate-bot.mjs");
+const VOICE_TTS_FORMATS = new Set(["opus", "mp3", "wav", "aac", "flac", "pcm"]);
 
 function usage() {
   console.log(`Usage:
@@ -41,6 +42,7 @@ function usage() {
 Voice mode:
   trans voice init
   trans voice start|stop|restart|status|show|logs [lines]
+  trans voice kick|leave
   trans voice set channel <voice_channel_id>
   trans voice set control-channel <text_channel_id|clear>
   trans voice set users <id1,id2,...>
@@ -51,6 +53,16 @@ Voice mode:
   trans voice set user-targets <userId:lang,userId:lang|clear>
   trans voice set openai-key <api_key>
   trans voice set discord-token <bot_token>
+  trans voice set model <openai_chat_model>
+  trans voice set transcribe-model <openai_stt_model>
+  trans voice set tts-model <openai_tts_model>
+  trans voice set tts-voice <voice_name>
+  trans voice set tts-format <opus|mp3|wav|aac|flac|pcm>
+  trans voice set require-start-command <true|false>
+  trans voice set silence-ms <number>
+  trans voice set min-bytes <number>
+  trans voice set max-bytes <number>
+  trans voice set text-feedback <true|false>
 
 Notes:
   - Config file: .trans.env (auto-created from .trans.env.example if missing)
@@ -205,6 +217,21 @@ function validateDiscordId(value) {
 
 function validateUserList(value) {
   return /^[0-9]{10,25}(,[0-9]{10,25})*$/.test(value);
+}
+
+function parsePositiveIntStrict(value) {
+  const parsed = Number.parseInt(String(value || "").trim(), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    fail("value must be a positive integer");
+  }
+  return String(parsed);
+}
+
+function parseBooleanStrict(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) return "true";
+  if (["0", "false", "no", "n", "off"].includes(normalized)) return "false";
+  fail("value must be true/false");
 }
 
 function isClearValue(value) {
@@ -746,6 +773,73 @@ function setVoiceControlChannelCmd(value) {
   info(`updated DISCORD_CONTROL_CHANNEL_ID=${value}`);
 }
 
+function setVoiceModelCmd(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) fail("model cannot be empty");
+  upsertConfigValue("OPENAI_MODEL", normalized, VOICE_CONFIG_FILE);
+  info(`updated OPENAI_MODEL=${normalized}`);
+}
+
+function setVoiceTranscribeModelCmd(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) fail("transcribe model cannot be empty");
+  upsertConfigValue("OPENAI_TRANSCRIBE_MODEL", normalized, VOICE_CONFIG_FILE);
+  info(`updated OPENAI_TRANSCRIBE_MODEL=${normalized}`);
+}
+
+function setVoiceTtsModelCmd(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) fail("tts model cannot be empty");
+  upsertConfigValue("OPENAI_TTS_MODEL", normalized, VOICE_CONFIG_FILE);
+  info(`updated OPENAI_TTS_MODEL=${normalized}`);
+}
+
+function setVoiceTtsVoiceCmd(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) fail("tts voice cannot be empty");
+  upsertConfigValue("OPENAI_TTS_VOICE", normalized, VOICE_CONFIG_FILE);
+  info(`updated OPENAI_TTS_VOICE=${normalized}`);
+}
+
+function setVoiceTtsFormatCmd(value) {
+  const normalized = normalizeLang(value);
+  if (!VOICE_TTS_FORMATS.has(normalized)) {
+    fail(`tts format must be one of: ${Array.from(VOICE_TTS_FORMATS).join(",")}`);
+  }
+  upsertConfigValue("OPENAI_TTS_FORMAT", normalized, VOICE_CONFIG_FILE);
+  info(`updated OPENAI_TTS_FORMAT=${normalized}`);
+}
+
+function setVoiceRequireStartCmd(value) {
+  const normalized = parseBooleanStrict(value);
+  upsertConfigValue("REQUIRE_START_COMMAND", normalized, VOICE_CONFIG_FILE);
+  info(`updated REQUIRE_START_COMMAND=${normalized}`);
+}
+
+function setVoiceSilenceMsCmd(value) {
+  const normalized = parsePositiveIntStrict(value);
+  upsertConfigValue("SPEECH_SILENCE_MS", normalized, VOICE_CONFIG_FILE);
+  info(`updated SPEECH_SILENCE_MS=${normalized}`);
+}
+
+function setVoiceMinBytesCmd(value) {
+  const normalized = parsePositiveIntStrict(value);
+  upsertConfigValue("VOICE_MIN_PCM_BYTES", normalized, VOICE_CONFIG_FILE);
+  info(`updated VOICE_MIN_PCM_BYTES=${normalized}`);
+}
+
+function setVoiceMaxBytesCmd(value) {
+  const normalized = parsePositiveIntStrict(value);
+  upsertConfigValue("VOICE_MAX_PCM_BYTES", normalized, VOICE_CONFIG_FILE);
+  info(`updated VOICE_MAX_PCM_BYTES=${normalized}`);
+}
+
+function setVoiceTextFeedbackCmd(value) {
+  const normalized = parseBooleanStrict(value);
+  upsertConfigValue("VOICE_TEXT_FEEDBACK", normalized, VOICE_CONFIG_FILE);
+  info(`updated VOICE_TEXT_FEEDBACK=${normalized}`);
+}
+
 function setVoiceCmd(key, value) {
   ensureVoiceConfigFile();
 
@@ -790,6 +884,39 @@ function setVoiceCmd(key, value) {
     case "bot-token":
     case "discord_bot_token":
       setDiscordTokenCmd(value, VOICE_CONFIG_FILE);
+      return;
+    case "model":
+    case "openai-model":
+    case "chat-model":
+      setVoiceModelCmd(value);
+      return;
+    case "transcribe-model":
+    case "stt-model":
+      setVoiceTranscribeModelCmd(value);
+      return;
+    case "tts-model":
+      setVoiceTtsModelCmd(value);
+      return;
+    case "tts-voice":
+      setVoiceTtsVoiceCmd(value);
+      return;
+    case "tts-format":
+      setVoiceTtsFormatCmd(value);
+      return;
+    case "require-start-command":
+      setVoiceRequireStartCmd(value);
+      return;
+    case "silence-ms":
+      setVoiceSilenceMsCmd(value);
+      return;
+    case "min-bytes":
+      setVoiceMinBytesCmd(value);
+      return;
+    case "max-bytes":
+      setVoiceMaxBytesCmd(value);
+      return;
+    case "text-feedback":
+      setVoiceTextFeedbackCmd(value);
       return;
     default:
       fail(`unknown voice set key: ${key}`);
@@ -929,6 +1056,16 @@ function showVoiceCmd() {
   info(`LANGUAGE_PAIRS=${cfg.LANGUAGE_PAIRS || ""}`);
   info(`DEFAULT_TARGET_LANGUAGE=${cfg.DEFAULT_TARGET_LANGUAGE || ""}`);
   info(`DISCORD_USER_TARGET_LANGUAGES=${cfg.DISCORD_USER_TARGET_LANGUAGES || ""}`);
+  info(`OPENAI_MODEL=${cfg.OPENAI_MODEL || ""}`);
+  info(`OPENAI_TRANSCRIBE_MODEL=${cfg.OPENAI_TRANSCRIBE_MODEL || ""}`);
+  info(`OPENAI_TTS_MODEL=${cfg.OPENAI_TTS_MODEL || ""}`);
+  info(`OPENAI_TTS_VOICE=${cfg.OPENAI_TTS_VOICE || ""}`);
+  info(`OPENAI_TTS_FORMAT=${cfg.OPENAI_TTS_FORMAT || ""}`);
+  info(`SPEECH_SILENCE_MS=${cfg.SPEECH_SILENCE_MS || ""}`);
+  info(`VOICE_MIN_PCM_BYTES=${cfg.VOICE_MIN_PCM_BYTES || ""}`);
+  info(`VOICE_MAX_PCM_BYTES=${cfg.VOICE_MAX_PCM_BYTES || ""}`);
+  info(`REQUIRE_START_COMMAND=${cfg.REQUIRE_START_COMMAND || ""}`);
+  info(`VOICE_TEXT_FEEDBACK=${cfg.VOICE_TEXT_FEEDBACK || ""}`);
 }
 
 function logsVoiceCmd(linesArg) {
@@ -948,6 +1085,10 @@ async function voiceMain(args) {
   switch (command) {
     case "init":
       initVoiceCmd();
+      return;
+    case "kick":
+    case "leave":
+      await stopVoiceCmd();
       return;
     case "start":
       await startVoiceCmd();
