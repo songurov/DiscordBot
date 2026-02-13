@@ -5,6 +5,7 @@ const OPENAI_API_BASE = "https://api.openai.com/v1";
 
 const DISCORD_BOT_TOKEN = requiredEnv("DISCORD_BOT_TOKEN");
 const DISCORD_CHANNEL_ID = String(process.env.DISCORD_CHANNEL_ID || "").trim();
+const DISCORD_CHANNEL_IDS = String(process.env.DISCORD_CHANNEL_IDS || "").trim();
 const DISCORD_TARGET_USER_ID = String(process.env.DISCORD_TARGET_USER_ID || "").trim();
 const OPENAI_API_KEY = requiredEnv("OPENAI_API_KEY");
 
@@ -35,8 +36,9 @@ let statusCommands = parseCommandList(process.env.STATUS_COMMANDS || "status,/st
 const BOT_COMMAND_PREFIX = normalizeCommand(process.env.BOT_COMMAND_PREFIX || "!bot");
 
 let botUserId = null;
-let lastSeenMessageId = null;
-let activeChannelId = DISCORD_CHANNEL_ID;
+let monitoredChannelIds = [];
+const channelLastSeenMessageIds = new Map();
+let controlChannelId = null;
 let translationEnabled = !requireStartCommand;
 
 const systemPrompt = [
@@ -56,23 +58,30 @@ async function main() {
   const bot = await discordRequest("GET", "/users/@me");
   botUserId = bot.id;
 
-  if (!activeChannelId) {
+  if (DISCORD_CHANNEL_IDS) {
+    setMonitoredChannels(parseDiscordIdListStrict(DISCORD_CHANNEL_IDS));
+  } else if (DISCORD_CHANNEL_ID) {
+    setMonitoredChannels([DISCORD_CHANNEL_ID]);
+  } else {
     if (!isDiscordId(DISCORD_TARGET_USER_ID)) {
       console.error(
-        "[discord-translate-bot] provide DISCORD_CHANNEL_ID or a valid DISCORD_TARGET_USER_ID",
+        "[discord-translate-bot] provide DISCORD_CHANNEL_ID, DISCORD_CHANNEL_IDS, or a valid DISCORD_TARGET_USER_ID",
       );
       process.exit(1);
     }
-    activeChannelId = await ensureDmChannel(DISCORD_TARGET_USER_ID);
+    const dmChannelId = await ensureDmChannel(DISCORD_TARGET_USER_ID);
+    setMonitoredChannels([dmChannelId]);
   }
 
-  const latest = await fetchMessagesAfter(null);
-  if (latest.length > 0) {
-    lastSeenMessageId = latest[0].id;
+  for (const channelId of monitoredChannelIds) {
+    const latest = await fetchMessagesAfter(channelId, null);
+    if (latest.length > 0) {
+      channelLastSeenMessageIds.set(channelId, latest[0].id);
+    }
   }
 
   console.log(
-    `[discord-translate-bot] connected as ${bot.username} (${bot.id}), channel=${activeChannelId}, model=${openAiModel}`,
+    `[discord-translate-bot] connected as ${bot.username} (${bot.id}), channels=${channelIdsToCsv(monitoredChannelIds)}, model=${openAiModel}`,
   );
   console.log(
     `[discord-translate-bot] routing default_target=${defaultTargetLanguage || "-"}, language_pairs=${languagePairsToCsv(languagePairs) || "-"}, user_targets=${userTargetsToCsv(userTargetLanguages) || "-"}`,
@@ -116,27 +125,30 @@ async function main() {
 }
 
 async function pollOnce() {
-  const messages = await fetchMessagesAfter(lastSeenMessageId);
-  if (messages.length === 0) return;
+  for (const channelId of monitoredChannelIds) {
+    const messages = await fetchMessagesAfter(channelId, channelLastSeenMessageIds.get(channelId) || null);
+    if (messages.length === 0) continue;
 
-  messages.sort((a, b) => compareSnowflakes(a.id, b.id));
+    messages.sort((a, b) => compareSnowflakes(a.id, b.id));
 
-  for (const message of messages) {
-    if (lastSeenMessageId === null || compareSnowflakes(message.id, lastSeenMessageId) > 0) {
-      lastSeenMessageId = message.id;
+    for (const message of messages) {
+      const lastSeen = channelLastSeenMessageIds.get(channelId) || null;
+      if (lastSeen === null || compareSnowflakes(message.id, lastSeen) > 0) {
+        channelLastSeenMessageIds.set(channelId, message.id);
+      }
+      await handleMessage(message, channelId);
     }
-    await handleMessage(message);
   }
 }
 
-async function handleMessage(message) {
+async function handleMessage(message, channelId) {
   if (!message || message.type !== 0) return;
   if (!message.content || !message.content.trim()) return;
   if (message.author?.bot || message.author?.id === botUserId) return;
   if (allowedUserIds.size > 0 && !allowedUserIds.has(message.author?.id || "")) return;
 
   const originalText = message.content.trim();
-  if (await maybeHandleControlCommand(message, originalText)) return;
+  if (await maybeHandleControlCommand(message, originalText, channelId)) return;
   if (!translationEnabled) return;
 
   const forcedTargetLanguage = resolveForcedTargetLanguage(message.author?.id || "");
@@ -157,24 +169,24 @@ async function handleMessage(message) {
   if (replyWithQuote) {
     payload.message_reference = {
       message_id: message.id,
-      channel_id: activeChannelId,
+      channel_id: channelId,
     };
   }
 
-  await discordRequest("POST", `/channels/${activeChannelId}/messages`, payload);
+  await discordRequest("POST", `/channels/${channelId}/messages`, payload);
 
   if (shouldDeleteOriginalMessage(message, translated.detected_language)) {
-    await deleteOriginalMessageSafe(message.id);
+    await deleteOriginalMessageSafe(channelId, message.id);
   }
 }
 
-async function maybeHandleControlCommand(message, text) {
+async function maybeHandleControlCommand(message, text, channelId) {
   const command = normalizeCommand(text);
   const isControlUser = allowedUserIds.size === 0 || allowedUserIds.has(message.author?.id || "");
 
   if (command.startsWith(`${BOT_COMMAND_PREFIX} `) || command === BOT_COMMAND_PREFIX) {
     if (!isControlUser) return true;
-    await handleBotPrefixedCommand(command.slice(BOT_COMMAND_PREFIX.length).trim());
+    await handleBotPrefixedCommand(command.slice(BOT_COMMAND_PREFIX.length).trim(), channelId);
     return true;
   }
 
@@ -182,47 +194,48 @@ async function maybeHandleControlCommand(message, text) {
 
   if (startCommands.has(command)) {
     translationEnabled = true;
-    await sendControlMessage("Translation started.");
+    await sendControlMessage("Translation started.", channelId);
     return true;
   }
   if (stopCommands.has(command)) {
     translationEnabled = false;
-    await sendControlMessage("Translation stopped.");
+    await sendControlMessage("Translation stopped.", channelId);
     return true;
   }
   if (statusCommands.has(command)) {
-    await sendControlMessage(`Translation status: ${translationEnabled ? "ON" : "OFF"}.`);
+    await sendControlMessage(`Translation status: ${translationEnabled ? "ON" : "OFF"}.`, channelId);
     return true;
   }
 
   return false;
 }
 
-async function handleBotPrefixedCommand(rawArgs) {
+async function handleBotPrefixedCommand(rawArgs, channelId) {
   const args = rawArgs.split(/\s+/).filter(Boolean);
   const action = normalizeCommand(args[0] || "help");
 
   if (action === "help") {
     await sendControlMessage(
       `Commands: ${BOT_COMMAND_PREFIX} help | ${BOT_COMMAND_PREFIX} params | ${BOT_COMMAND_PREFIX} start | ${BOT_COMMAND_PREFIX} stop | ${BOT_COMMAND_PREFIX} status | ${BOT_COMMAND_PREFIX} set <key> <value>`,
+      channelId,
     );
     return;
   }
 
   if (action === "start") {
     translationEnabled = true;
-    await sendControlMessage("Translation started.");
+    await sendControlMessage("Translation started.", channelId);
     return;
   }
 
   if (action === "stop") {
     translationEnabled = false;
-    await sendControlMessage("Translation stopped.");
+    await sendControlMessage("Translation stopped.", channelId);
     return;
   }
 
   if (action === "status" || action === "params") {
-    await sendControlMessage(renderConfigStatus());
+    await sendControlMessage(renderConfigStatus(), channelId);
     return;
   }
 
@@ -232,23 +245,25 @@ async function handleBotPrefixedCommand(rawArgs) {
     if (!key || !value) {
       await sendControlMessage(
         `Usage: ${BOT_COMMAND_PREFIX} set <key> <value>. Example: ${BOT_COMMAND_PREFIX} set language_pairs ro:en,en:ro`,
+        channelId,
       );
       return;
     }
     const result = applyRuntimeSetting(key, value);
     if (!result.ok) {
-      await sendControlMessage(`Invalid setting: ${result.error}`);
+      await sendControlMessage(`Invalid setting: ${result.error}`, channelId);
       return;
     }
-    await sendControlMessage(`Updated ${key} = ${result.value}`);
+    await sendControlMessage(`Updated ${key} = ${result.value}`, channelId);
     return;
   }
 
-  await sendControlMessage(`Unknown command. Use ${BOT_COMMAND_PREFIX} help`);
+  await sendControlMessage(`Unknown command. Use ${BOT_COMMAND_PREFIX} help`, channelId);
 }
 
-async function sendControlMessage(text) {
-  await discordRequest("POST", `/channels/${activeChannelId}/messages`, {
+async function sendControlMessage(text, channelId = controlChannelId) {
+  if (!channelId) return;
+  await discordRequest("POST", `/channels/${channelId}/messages`, {
     content: text.slice(0, 1900),
     allowed_mentions: {
       parse: [],
@@ -262,6 +277,7 @@ function renderConfigStatus() {
     `model=${openAiModel}`,
     `poll_interval_ms=${pollIntervalMs}`,
     `poll_limit=${pollLimit}`,
+    `channel_ids=${channelIdsToCsv(monitoredChannelIds) || "-"}`,
     `default_target_language=${defaultTargetLanguage || "-"}`,
     `language_pairs=${languagePairsToCsv(languagePairs) || "-"}`,
     `user_target_languages=${userTargetsToCsv(userTargetLanguages) || "-"}`,
@@ -289,6 +305,9 @@ function applyRuntimeSetting(key, value) {
       case "poll_limit":
         pollLimit = parsePositiveIntStrict(value);
         return { ok: true, value: String(pollLimit) };
+      case "channel_ids":
+        setMonitoredChannels(parseDiscordIdListStrict(value));
+        return { ok: true, value: channelIdsToCsv(monitoredChannelIds) || "-" };
       case "default_target_language":
         defaultTargetLanguage = parseLanguageTokenStrict(value, true);
         return { ok: true, value: defaultTargetLanguage || "-" };
@@ -336,7 +355,7 @@ function applyRuntimeSetting(key, value) {
         return {
           ok: false,
           error:
-            "key not supported. Use: openai_model, poll_interval_ms, poll_limit, default_target_language, language_pairs, user_target_languages, reply_with_quote, delete_original_on_translation, delete_original_source_languages, delete_original_ro_to_en, require_start_command, allowed_user_ids, delete_original_user_ids, start_commands, stop_commands, status_commands",
+            "key not supported. Use: openai_model, poll_interval_ms, poll_limit, channel_ids, default_target_language, language_pairs, user_target_languages, reply_with_quote, delete_original_on_translation, delete_original_source_languages, delete_original_ro_to_en, require_start_command, allowed_user_ids, delete_original_user_ids, start_commands, stop_commands, status_commands",
         };
     }
   } catch (error) {
@@ -437,10 +456,10 @@ function normalizeDetectedLanguage(value) {
   return normalized;
 }
 
-async function fetchMessagesAfter(afterId) {
+async function fetchMessagesAfter(channelId, afterId) {
   const query = new URLSearchParams({ limit: String(pollLimit) });
   if (afterId) query.set("after", afterId);
-  const path = `/channels/${activeChannelId}/messages?${query.toString()}`;
+  const path = `/channels/${channelId}/messages?${query.toString()}`;
   const data = await discordRequest("GET", path);
   return Array.isArray(data) ? data : [];
 }
@@ -455,9 +474,9 @@ async function ensureDmChannel(targetUserId) {
   return channel.id;
 }
 
-async function deleteOriginalMessageSafe(messageId) {
+async function deleteOriginalMessageSafe(channelId, messageId) {
   try {
-    await discordRequest("DELETE", `/channels/${activeChannelId}/messages/${messageId}`);
+    await discordRequest("DELETE", `/channels/${channelId}/messages/${messageId}`);
   } catch (error) {
     console.warn(`[discord-translate-bot] could not delete original message: ${error.message}`);
   }
@@ -560,6 +579,38 @@ function parseAllowedUserIds(value) {
 
   const valid = ids.filter((id) => /^\d{10,25}$/.test(id));
   return new Set(valid);
+}
+
+function parseDiscordIdListStrict(value) {
+  const ids = String(value || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  if (ids.length === 0) {
+    throw new Error("value must contain one or more Discord channel IDs separated by comma");
+  }
+
+  for (const id of ids) {
+    if (!isDiscordId(id)) {
+      throw new Error("invalid Discord channel ID list (use id1,id2,...)");
+    }
+  }
+
+  return deduplicateDiscordIds(ids);
+}
+
+function deduplicateDiscordIds(ids) {
+  const unique = [];
+  const seen = new Set();
+
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    unique.push(id);
+  }
+
+  return unique;
 }
 
 function parseCommandList(value) {
@@ -725,6 +776,10 @@ function normalizeCommand(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function channelIdsToCsv(channelIds) {
+  return Array.from(channelIds || []).join(",");
+}
+
 function setToCsv(set) {
   return Array.from(set || []).join(",");
 }
@@ -755,6 +810,15 @@ function shouldDeleteOriginalMessage(message, sourceLanguage) {
   const authorId = message?.author?.id || "";
   if (deleteOriginalUserIds.size === 0) return true;
   return deleteOriginalUserIds.has(authorId);
+}
+
+function setMonitoredChannels(channelIds) {
+  monitoredChannelIds = deduplicateDiscordIds((channelIds || []).filter((id) => isDiscordId(id)));
+  controlChannelId = monitoredChannelIds[0] || null;
+  channelLastSeenMessageIds.clear();
+  for (const channelId of monitoredChannelIds) {
+    channelLastSeenMessageIds.set(channelId, null);
+  }
 }
 
 function compareSnowflakes(a, b) {

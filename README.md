@@ -27,6 +27,8 @@ You can set everything directly from CLI (no manual export needed):
 ./trans set discord-token YOUR_DISCORD_BOT_TOKEN
 ./trans set openai-key YOUR_OPENAI_API_KEY
 ./trans set channel YOUR_CHANNEL_ID
+# or multi-channel:
+# ./trans set channels CHANNEL_ID_1,CHANNEL_ID_2
 ./trans set users 653582557711040513,938846694286704680
 ./trans set lang-in ro
 ./trans set lang-out en
@@ -49,7 +51,7 @@ Notes:
 
 ## 4.1 Important runtime notes
 
-- If you run `trans set channel <id>` (or change other routing values), run `trans restart` to apply new config to the running process.
+- If you run `trans set channel <id>` / `trans set channels <id1,id2,...>` (or change other routing values), run `trans restart` to apply new config to the running process.
 - If `REQUIRE_START_COMMAND=true`, translation stays OFF until you send `start` in the target channel.
 - Bot can appear Offline in Discord member list (REST polling mode). Check real state with `trans status` and `trans logs`.
 
@@ -97,6 +99,7 @@ trans start|stop|restart|status|show|logs
 trans set lang-in <code>
 trans set lang-out <code>
 trans set users <id1,id2,...>
+trans set channels <channel_id1,channel_id2,...>
 trans set channel <channel_id>
 trans set target-user <user_id>
 trans set language-pairs <src:dst,src:dst,...|clear>

@@ -94,6 +94,7 @@ If you see `insufficient_quota`, key may be valid but quota is not active.
 - `DISCORD_BOT_TOKEN`
 - `OPENAI_API_KEY`
 - one of:
+- `DISCORD_CHANNEL_IDS` (multi-channel server mode)
 - `DISCORD_CHANNEL_ID` (server channel mode)
 - `DISCORD_TARGET_USER_ID` (DM-with-bot mode)
 
@@ -136,6 +137,7 @@ Create `.env.bot` in project root:
 ```bash
 DISCORD_BOT_TOKEN=PASTE_DISCORD_BOT_TOKEN
 OPENAI_API_KEY=PASTE_OPENAI_API_KEY
+# DISCORD_CHANNEL_IDS=1471169419605708938,1471169419605708940
 DISCORD_CHANNEL_ID=1471169419605708938
 
 DISCORD_ALLOWED_USER_IDS=653582557711040513,938846694286704680
@@ -199,6 +201,7 @@ Other runtime settings:
 - `!bot set openai_model gpt-4.1-mini`
 - `!bot set poll_interval_ms 2000`
 - `!bot set poll_limit 50`
+- `!bot set channel_ids 1471169419605708938,1471169419605708940`
 - `!bot set reply_with_quote true`
 - `!bot set delete_original_on_translation true`
 - `!bot set delete_original_source_languages ro,ru`
@@ -245,7 +248,7 @@ Check:
 - user IDs are correct in `DISCORD_ALLOWED_USER_IDS`
 - if `REQUIRE_START_COMMAND=true`, you sent `start`
 - routing is configured (`language_pairs`, `default_target_language`, or `user_target_languages`)
-- after `trans set channel <id>` (or route changes), run `trans restart` so the running process loads new config
+- after `trans set channel <id>` / `trans set channels <id1,id2,...>` (or route changes), run `trans restart` so the running process loads new config
 - if bot appears Offline in Discord member list, verify with `trans status` and `trans logs` (REST polling mode may not show online presence)
 
 ## 11. Security
@@ -286,6 +289,7 @@ Quick config updates:
 - `./trans set lang-in ro` (Windows: `trans.cmd set lang-in ro`)
 - `./trans set lang-out en` (Windows: `trans.cmd set lang-out en`)
 - `./trans set users 653582557711040513,938846694286704680`
+- `./trans set channels 1471169419605708938,1471169419605708940`
 
 Global command setup:
 - Linux:

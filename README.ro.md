@@ -94,6 +94,7 @@ Daca vezi `insufficient_quota`, cheia poate fi valida dar fara quota activa.
 - `DISCORD_BOT_TOKEN`
 - `OPENAI_API_KEY`
 - una dintre:
+- `DISCORD_CHANNEL_IDS` (mod multi-canal server)
 - `DISCORD_CHANNEL_ID` (mod canal server)
 - `DISCORD_TARGET_USER_ID` (mod DM cu botul)
 
@@ -136,6 +137,7 @@ Creeaza `.env.bot` in radacina proiectului:
 ```bash
 DISCORD_BOT_TOKEN=PASTE_DISCORD_BOT_TOKEN
 OPENAI_API_KEY=PASTE_OPENAI_API_KEY
+# DISCORD_CHANNEL_IDS=1471169419605708938,1471169419605708940
 DISCORD_CHANNEL_ID=1471169419605708938
 
 DISCORD_ALLOWED_USER_IDS=653582557711040513,938846694286704680
@@ -199,6 +201,7 @@ Alte setari runtime:
 - `!bot set openai_model gpt-4.1-mini`
 - `!bot set poll_interval_ms 2000`
 - `!bot set poll_limit 50`
+- `!bot set channel_ids 1471169419605708938,1471169419605708940`
 - `!bot set reply_with_quote true`
 - `!bot set delete_original_on_translation true`
 - `!bot set delete_original_source_languages ro,ru`
@@ -245,7 +248,7 @@ Verifica:
 - user IDs corecte in `DISCORD_ALLOWED_USER_IDS`
 - daca `REQUIRE_START_COMMAND=true`, ai trimis `start`
 - rutarea limbilor este configurata (`language_pairs`, `default_target_language` sau `user_target_languages`)
-- dupa `trans set channel <id>` (sau alte schimbari de rutare), ruleaza `trans restart` ca procesul pornit sa incarce noua configuratie
+- dupa `trans set channel <id>` / `trans set channels <id1,id2,...>` (sau alte schimbari de rutare), ruleaza `trans restart` ca procesul pornit sa incarce noua configuratie
 - daca botul apare Offline in lista de membri Discord, verifica starea reala cu `trans status` si `trans logs` (modul REST polling poate sa nu afiseze prezenta online)
 
 ## 11. Securitate
@@ -286,6 +289,7 @@ Actualizare rapida configurare:
 - `./trans set lang-in ro` (Windows: `trans.cmd set lang-in ro`)
 - `./trans set lang-out en` (Windows: `trans.cmd set lang-out en`)
 - `./trans set users 653582557711040513,938846694286704680`
+- `./trans set channels 1471169419605708938,1471169419605708940`
 
 Comanda globala:
 - Linux:

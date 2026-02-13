@@ -31,6 +31,7 @@ function usage() {
   trans set lang-in <code>
   trans set lang-out <code>
   trans set users <id1,id2,...>
+  trans set channels <channel_id1,channel_id2,...>
   trans set channel <channel_id>
   trans set target-user <user_id>
   trans set language-pairs <src:dst,src:dst,...|clear>
@@ -220,6 +221,10 @@ function validateUserList(value) {
   return /^[0-9]{10,25}(,[0-9]{10,25})*$/.test(value);
 }
 
+function validateDiscordIdList(value) {
+  return /^[0-9]{10,25}(,[0-9]{10,25})*$/.test(value);
+}
+
 function parsePositiveIntStrict(value) {
   const parsed = Number.parseInt(String(value || "").trim(), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -323,6 +328,7 @@ function looksLikePlaceholder(value) {
 function validateStartConfig(config) {
   const botToken = String(config.DISCORD_BOT_TOKEN ?? "").trim();
   const openAiKey = String(config.OPENAI_API_KEY ?? "").trim();
+  const channelIds = String(config.DISCORD_CHANNEL_IDS ?? "").trim();
   const channelId = String(config.DISCORD_CHANNEL_ID ?? "").trim();
   const targetUserId = String(config.DISCORD_TARGET_USER_ID ?? "").trim();
 
@@ -336,8 +342,12 @@ function validateStartConfig(config) {
     fail(`OPENAI_API_KEY looks like template value. Set real key in ${CONFIG_FILE}`);
   }
 
-  if (!channelId && !targetUserId) {
-    fail(`set DISCORD_CHANNEL_ID or DISCORD_TARGET_USER_ID in ${CONFIG_FILE}`);
+  if (channelIds && !validateDiscordIdList(channelIds)) {
+    fail("DISCORD_CHANNEL_IDS is not valid (use id1,id2,...)");
+  }
+
+  if (!channelIds && !channelId && !targetUserId) {
+    fail(`set DISCORD_CHANNEL_ID, DISCORD_CHANNEL_IDS, or DISCORD_TARGET_USER_ID in ${CONFIG_FILE}`);
   }
 
   if (channelId && !validateDiscordId(channelId)) {
@@ -525,6 +535,7 @@ function showCmd() {
 
   info(`DISCORD_BOT_TOKEN=${maskSecret(cfg.DISCORD_BOT_TOKEN)}`);
   info(`OPENAI_API_KEY=${maskSecret(cfg.OPENAI_API_KEY)}`);
+  info(`DISCORD_CHANNEL_IDS=${cfg.DISCORD_CHANNEL_IDS || ""}`);
   info(`DISCORD_CHANNEL_ID=${cfg.DISCORD_CHANNEL_ID || ""}`);
   info(`DISCORD_TARGET_USER_ID=${cfg.DISCORD_TARGET_USER_ID || ""}`);
   info(`DISCORD_ALLOWED_USER_IDS=${cfg.DISCORD_ALLOWED_USER_IDS || ""}`);
@@ -570,18 +581,50 @@ function setUsersCmd(value, filePath = CONFIG_FILE, key = "DISCORD_ALLOWED_USER_
   info(`updated ${key}`);
 }
 
+function normalizeDiscordIdList(value) {
+  const ids = String(value || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  if (ids.length === 0) fail("channels cannot be empty");
+  for (const id of ids) {
+    if (!validateDiscordId(id)) fail(`invalid channel id: ${id}`);
+  }
+
+  return Array.from(new Set(ids)).join(",");
+}
+
+function setChannelsCmd(value, filePath = CONFIG_FILE) {
+  const normalized = normalizeDiscordIdList(value);
+  upsertConfigValue("DISCORD_CHANNEL_IDS", normalized, filePath);
+  info(`updated DISCORD_CHANNEL_IDS=${normalized}`);
+
+  upsertConfigValue("DISCORD_CHANNEL_ID", "", filePath);
+  upsertConfigValue("DISCORD_TARGET_USER_ID", "", filePath);
+  info("cleared DISCORD_CHANNEL_ID, DISCORD_TARGET_USER_ID (multi-channel mode active)");
+}
+
 function setChannelCmd(
   value,
   filePath = CONFIG_FILE,
   channelKey = "DISCORD_CHANNEL_ID",
   clearKey = "DISCORD_TARGET_USER_ID",
+  additionalClearKeys = [],
 ) {
   if (!validateDiscordId(value)) fail("invalid channel id");
   upsertConfigValue(channelKey, value, filePath);
   info(`updated ${channelKey}=${value}`);
-  if (clearKey) {
-    upsertConfigValue(clearKey, "", filePath);
-    info(`cleared ${clearKey} (channel mode active)`);
+
+  const keysToClear = [...(clearKey ? [clearKey] : []), ...additionalClearKeys]
+    .filter(Boolean)
+    .filter((item, idx, arr) => arr.indexOf(item) === idx);
+
+  if (keysToClear.length > 0) {
+    for (const key of keysToClear) {
+      upsertConfigValue(key, "", filePath);
+    }
+    info(`cleared ${keysToClear.join(", ")} (channel mode active)`);
   }
 }
 
@@ -590,12 +633,22 @@ function setTargetUserCmd(
   filePath = CONFIG_FILE,
   targetKey = "DISCORD_TARGET_USER_ID",
   clearKey = "DISCORD_CHANNEL_ID",
+  additionalClearKeys = [],
 ) {
   if (!validateDiscordId(value)) fail("invalid user id");
   upsertConfigValue(targetKey, value, filePath);
-  upsertConfigValue(clearKey, "", filePath);
   info(`updated ${targetKey}=${value}`);
-  info(`cleared ${clearKey} (dm mode active)`);
+
+  const keysToClear = [...(clearKey ? [clearKey] : []), ...additionalClearKeys]
+    .filter(Boolean)
+    .filter((item, idx, arr) => arr.indexOf(item) === idx);
+
+  if (keysToClear.length > 0) {
+    for (const key of keysToClear) {
+      upsertConfigValue(key, "", filePath);
+    }
+    info(`cleared ${keysToClear.join(", ")} (dm mode active)`);
+  }
 }
 
 function normalizeLanguagePairs(raw) {
@@ -729,12 +782,19 @@ function setCmd(key, value) {
     case "users":
       setUsersCmd(value);
       return;
+    case "channels":
+      setChannelsCmd(value);
+      return;
     case "channel":
-      setChannelCmd(value);
+      setChannelCmd(value, CONFIG_FILE, "DISCORD_CHANNEL_ID", "DISCORD_TARGET_USER_ID", [
+        "DISCORD_CHANNEL_IDS",
+      ]);
       return;
     case "target-user":
     case "dm-user":
-      setTargetUserCmd(value);
+      setTargetUserCmd(value, CONFIG_FILE, "DISCORD_TARGET_USER_ID", "DISCORD_CHANNEL_ID", [
+        "DISCORD_CHANNEL_IDS",
+      ]);
       return;
     case "language-pairs":
     case "pairs":
