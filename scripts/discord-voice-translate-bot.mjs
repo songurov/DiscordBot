@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { Readable } from "node:stream";
 import {
   AudioPlayerStatus,
@@ -16,6 +19,15 @@ import { ChannelType, Client, GatewayIntentBits } from "discord.js";
 import prism from "prism-media";
 
 const OPENAI_API_BASE = "https://api.openai.com/v1";
+const INSTANCE_LOCK_FILE =
+  process.env.VTRANS_SINGLE_INSTANCE_LOCK ||
+  path.join(os.tmpdir(), "discord-voice-translate-bot.lock");
+
+const releaseInstanceLock = acquireSingleInstanceLock(
+  INSTANCE_LOCK_FILE,
+  "discord-voice-translate-bot",
+);
+registerLockCleanup(releaseInstanceLock);
 
 const DISCORD_BOT_TOKEN = requiredEnv("DISCORD_BOT_TOKEN");
 const OPENAI_API_KEY = requiredEnv("OPENAI_API_KEY");
@@ -84,9 +96,75 @@ audioPlayer.on("error", (error) => {
 });
 
 main().catch((error) => {
+  releaseInstanceLock();
   console.error(`[discord-voice-bot] fatal: ${error.message}`);
   process.exit(1);
 });
+
+function acquireSingleInstanceLock(lockFile, processLabel) {
+  const currentPid = process.pid;
+  const lockBody = `${currentPid}\n`;
+
+  try {
+    fs.writeFileSync(lockFile, lockBody, { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw error;
+
+    const existingPid = readLockPid(lockFile);
+    if (existingPid && existingPid !== currentPid && isPidRunning(existingPid)) {
+      throw new Error(`${processLabel} already running (pid ${existingPid})`);
+    }
+
+    fs.writeFileSync(lockFile, lockBody, { flag: "w", mode: 0o600 });
+  }
+
+  return () => {
+    try {
+      const existingPid = readLockPid(lockFile);
+      if (existingPid === currentPid) {
+        fs.rmSync(lockFile, { force: true });
+      }
+    } catch {
+      // best effort cleanup
+    }
+  };
+}
+
+function registerLockCleanup(release) {
+  let released = false;
+  const safeRelease = () => {
+    if (released) return;
+    released = true;
+    release();
+  };
+
+  process.once("exit", safeRelease);
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    process.once(signal, () => {
+      safeRelease();
+      process.exit(0);
+    });
+  }
+}
+
+function readLockPid(lockFile) {
+  try {
+    const raw = fs.readFileSync(lockFile, "utf8").trim();
+    const pid = Number.parseInt(raw, 10);
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function isPidRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
 
 async function main() {
   ensureTtsFormat(ttsFormat);
