@@ -80,6 +80,15 @@ If `/usr/local/bin` needs admin rights:
 sudo ln -sf "$(pwd)/trans" /usr/local/bin/trans
 ```
 
+Alternative without sudo (recommended):
+
+```bash
+mkdir -p ~/.local/bin
+ln -sf "$(pwd)/trans" ~/.local/bin/trans
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
 ### Windows (CMD/PowerShell)
 
 1. Add repo folder to system/user `PATH`.
@@ -91,6 +100,40 @@ trans.cmd stop
 trans.cmd restart
 trans.cmd status
 ```
+
+## 5.1 macOS autostart (after login)
+
+Use a LaunchAgent to start `trans` automatically each time your user logs in:
+
+```bash
+mkdir -p ~/Library/LaunchAgents
+cp launchd/com.songurov.discordbot.trans.plist ~/Library/LaunchAgents/com.songurov.discordbot.trans.plist
+launchctl bootout gui/$(id -u)/com.songurov.discordbot.trans 2>/dev/null || true
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.songurov.discordbot.trans.plist
+launchctl kickstart -k gui/$(id -u)/com.songurov.discordbot.trans
+```
+
+## 5.2 macOS autostart (after reboot, no login)
+
+Use a LaunchDaemon (system-level, requires sudo):
+
+```bash
+sudo cp launchd/com.songurov.discordbot.trans.daemon.plist /Library/LaunchDaemons/com.songurov.discordbot.trans.daemon.plist
+sudo chown root:wheel /Library/LaunchDaemons/com.songurov.discordbot.trans.daemon.plist
+sudo chmod 644 /Library/LaunchDaemons/com.songurov.discordbot.trans.daemon.plist
+sudo launchctl bootout system/com.songurov.discordbot.trans.daemon 2>/dev/null || true
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.songurov.discordbot.trans.daemon.plist
+sudo launchctl kickstart -k system/com.songurov.discordbot.trans.daemon
+```
+
+Check service state:
+
+```bash
+trans status
+```
+
+Sleep note:
+- If Mac enters sleep, network processing pauses. Keep Mac awake or use a VPS for 24/7 uptime.
 
 ## 6. Supported CLI commands
 

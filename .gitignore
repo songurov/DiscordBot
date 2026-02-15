@@ -6,3 +6,9 @@
 .vtrans.pid
 .vtrans.log
 .npm-cache
+node_modules/
+.pm2/
+.launchd-trans.out.log
+.launchd-trans.err.log
+.launchd-trans-daemon.out.log
+.launchd-trans-daemon.err.log

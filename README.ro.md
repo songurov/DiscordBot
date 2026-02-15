@@ -297,8 +297,32 @@ Comanda globala:
 - adauga in profil shell: `export PATH="$HOME/.local/bin:$PATH"`
 - macOS:
 - `ln -sf "$(pwd)/trans" /usr/local/bin/trans`
+- alternativa fara sudo (recomandat):
+- `mkdir -p ~/.local/bin && ln -sf "$(pwd)/trans" ~/.local/bin/trans`
+- adauga in `~/.zshrc`: `export PATH="$HOME/.local/bin:$PATH"`
 - Windows:
 - adauga folderul repo in `PATH`
 - apoi ruleaza `trans.cmd start` din orice terminal
 
 Dupa configurarea PATH, poti folosi direct `trans start`, `trans stop`, `trans restart` pe Linux/macOS.
+
+Autostart macOS (dupa login user):
+- `mkdir -p ~/Library/LaunchAgents`
+- `cp launchd/com.songurov.discordbot.trans.plist ~/Library/LaunchAgents/com.songurov.discordbot.trans.plist`
+- `launchctl bootout gui/$(id -u)/com.songurov.discordbot.trans 2>/dev/null || true`
+- `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.songurov.discordbot.trans.plist`
+- `launchctl kickstart -k gui/$(id -u)/com.songurov.discordbot.trans`
+
+Autostart macOS (dupa reboot, fara login - system daemon):
+- `sudo cp launchd/com.songurov.discordbot.trans.daemon.plist /Library/LaunchDaemons/com.songurov.discordbot.trans.daemon.plist`
+- `sudo chown root:wheel /Library/LaunchDaemons/com.songurov.discordbot.trans.daemon.plist`
+- `sudo chmod 644 /Library/LaunchDaemons/com.songurov.discordbot.trans.daemon.plist`
+- `sudo launchctl bootout system/com.songurov.discordbot.trans.daemon 2>/dev/null || true`
+- `sudo launchctl bootstrap system /Library/LaunchDaemons/com.songurov.discordbot.trans.daemon.plist`
+- `sudo launchctl kickstart -k system/com.songurov.discordbot.trans.daemon`
+
+Verificare:
+- `trans status`
+
+Nota sleep:
+- daca Mac-ul intra in sleep, botul nu mai proceseaza mesaje pana la wake; pentru uptime 24/7 real foloseste VPS.
