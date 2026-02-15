@@ -326,3 +326,25 @@ Verificare:
 
 Nota sleep:
 - daca Mac-ul intra in sleep, botul nu mai proceseaza mesaje pana la wake; pentru uptime 24/7 real foloseste VPS.
+
+Autostart Linux (systemd user service):
+- ruleaza: `./scripts/install-autostart-linux.sh`
+
+Comenzi utile:
+- `systemctl --user status discord-trans.service`
+- `systemctl --user restart discord-trans.service`
+- `systemctl --user stop discord-trans.service`
+- `systemctl --user disable discord-trans.service`
+
+Pornire dupa reboot fara login interactiv:
+- `sudo loginctl enable-linger $USER`
+
+Autostart Windows (Task Scheduler):
+- ruleaza din PowerShell:
+- `powershell -ExecutionPolicy Bypass -File .\scripts\install-autostart-windows.ps1`
+
+Task name custom:
+- `powershell -ExecutionPolicy Bypass -File .\scripts\install-autostart-windows.ps1 -TaskName "DiscordTransBot"`
+
+Verificare task:
+- `schtasks /Query /TN "DiscordTransBot" /V /FO LIST`

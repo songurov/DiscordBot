@@ -135,6 +135,49 @@ trans status
 Sleep note:
 - If Mac enters sleep, network processing pauses. Keep Mac awake or use a VPS for 24/7 uptime.
 
+## 5.3 Linux autostart (systemd user service)
+
+Install and start autostart service:
+
+```bash
+./scripts/install-autostart-linux.sh
+```
+
+Useful commands:
+
+```bash
+systemctl --user status discord-trans.service
+systemctl --user restart discord-trans.service
+systemctl --user stop discord-trans.service
+systemctl --user disable discord-trans.service
+```
+
+For reboot start without interactive login:
+
+```bash
+sudo loginctl enable-linger $USER
+```
+
+## 5.4 Windows autostart (Task Scheduler)
+
+Open PowerShell in repo and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-autostart-windows.ps1
+```
+
+Custom task name:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-autostart-windows.ps1 -TaskName "DiscordTransBot"
+```
+
+Check task:
+
+```bat
+schtasks /Query /TN "DiscordTransBot" /V /FO LIST
+```
+
 ## 6. Supported CLI commands
 
 ```bash
