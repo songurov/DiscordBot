@@ -186,6 +186,9 @@ Comenzi avansate (`!bot` implicit):
 - `!bot start`
 - `!bot stop`
 - `!bot status`
+- `!bot purge all` (sterge toate mesajele din canalul curent)
+- `!bot purge today` / `!bot purge azi` (sterge mesajele de azi)
+- `!bot purge yesterday` / `!bot purge ieri` (sterge mesajele de ieri)
 
 Setari runtime pentru limbi:
 - `!bot set language_pairs ro:en,en:ro,ru:en,en:ru`

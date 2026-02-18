@@ -199,7 +199,11 @@ async function maybeHandleControlCommand(message, text, channelId) {
 
   if (command.startsWith(`${BOT_COMMAND_PREFIX} `) || command === BOT_COMMAND_PREFIX) {
     if (!isControlUser) return true;
-    await handleBotPrefixedCommand(command.slice(BOT_COMMAND_PREFIX.length).trim(), channelId);
+    await handleBotPrefixedCommand(
+      command.slice(BOT_COMMAND_PREFIX.length).trim(),
+      channelId,
+      message.id,
+    );
     return true;
   }
 
@@ -223,13 +227,13 @@ async function maybeHandleControlCommand(message, text, channelId) {
   return false;
 }
 
-async function handleBotPrefixedCommand(rawArgs, channelId) {
+async function handleBotPrefixedCommand(rawArgs, channelId, commandMessageId) {
   const args = rawArgs.split(/\s+/).filter(Boolean);
   const action = normalizeCommand(args[0] || "help");
 
   if (action === "help") {
     await sendControlMessage(
-      `Commands: ${BOT_COMMAND_PREFIX} help | ${BOT_COMMAND_PREFIX} params | ${BOT_COMMAND_PREFIX} start | ${BOT_COMMAND_PREFIX} stop | ${BOT_COMMAND_PREFIX} status | ${BOT_COMMAND_PREFIX} set <key> <value>`,
+      `Commands: ${BOT_COMMAND_PREFIX} help | ${BOT_COMMAND_PREFIX} params | ${BOT_COMMAND_PREFIX} start | ${BOT_COMMAND_PREFIX} stop | ${BOT_COMMAND_PREFIX} status | ${BOT_COMMAND_PREFIX} set <key> <value> | ${BOT_COMMAND_PREFIX} purge <all|today|yesterday>`,
       channelId,
     );
     return;
@@ -268,6 +272,25 @@ async function handleBotPrefixedCommand(rawArgs, channelId) {
       return;
     }
     await sendControlMessage(`Updated ${key} = ${result.value}`, channelId);
+    return;
+  }
+
+  if (action === "purge" || action === "delete") {
+    const scope = normalizePurgeScope(args[1] || "");
+    if (!scope) {
+      await sendControlMessage(
+        `Usage: ${BOT_COMMAND_PREFIX} purge <all|today|yesterday> (aliases: toate|azi|ieri)`,
+        channelId,
+      );
+      return;
+    }
+
+    await sendControlMessage(`Purge started: ${scope}.`, channelId);
+    const result = await purgeChannelMessages(channelId, scope, commandMessageId);
+    await sendControlMessage(
+      `Purge done (${scope}): deleted=${result.deleted}, failed=${result.failed}, scanned=${result.scanned}`,
+      channelId,
+    );
     return;
   }
 
@@ -475,6 +498,80 @@ async function fetchMessagesAfter(channelId, afterId) {
   const path = `/channels/${channelId}/messages?${query.toString()}`;
   const data = await discordRequest("GET", path);
   return Array.isArray(data) ? data : [];
+}
+
+async function fetchMessagesBefore(channelId, beforeId, limit = 100) {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (beforeId) query.set("before", beforeId);
+  const path = `/channels/${channelId}/messages?${query.toString()}`;
+  const data = await discordRequest("GET", path);
+  return Array.isArray(data) ? data : [];
+}
+
+async function purgeChannelMessages(channelId, scope, excludeMessageId) {
+  let beforeId = null;
+  let scanned = 0;
+  let deleted = 0;
+  let failed = 0;
+  const range = getPurgeRange(scope);
+
+  while (true) {
+    const batch = await fetchMessagesBefore(channelId, beforeId, 100);
+    if (batch.length === 0) break;
+    scanned += batch.length;
+    beforeId = batch[batch.length - 1]?.id || null;
+
+    for (const message of batch) {
+      if (excludeMessageId && message.id === excludeMessageId) continue;
+      if (!isMessageInRange(message, range)) continue;
+
+      try {
+        await discordRequest("DELETE", `/channels/${channelId}/messages/${message.id}`);
+        deleted += 1;
+      } catch (error) {
+        failed += 1;
+        console.warn(`[discord-translate-bot] purge delete failed for ${message.id}: ${error.message}`);
+      }
+    }
+
+    if (batch.length < 100) break;
+  }
+
+  return { scanned, deleted, failed };
+}
+
+function normalizePurgeScope(value) {
+  const scope = normalizeCommand(value);
+  if (scope === "all" || scope === "toate") return "all";
+  if (scope === "today" || scope === "azi") return "today";
+  if (scope === "yesterday" || scope === "ieri") return "yesterday";
+  return "";
+}
+
+function getPurgeRange(scope) {
+  if (scope === "all") return null;
+
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startTomorrow = startToday + 24 * 60 * 60 * 1000;
+  const startYesterday = startToday - 24 * 60 * 60 * 1000;
+
+  if (scope === "today") {
+    return { from: startToday, to: startTomorrow };
+  }
+
+  if (scope === "yesterday") {
+    return { from: startYesterday, to: startToday };
+  }
+
+  return null;
+}
+
+function isMessageInRange(message, range) {
+  if (!range) return true;
+  const timestamp = Date.parse(String(message?.timestamp || ""));
+  if (!Number.isFinite(timestamp)) return false;
+  return timestamp >= range.from && timestamp < range.to;
 }
 
 async function ensureDmChannel(targetUserId) {

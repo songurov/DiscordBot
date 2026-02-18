@@ -186,6 +186,9 @@ Advanced (`!bot` by default):
 - `!bot start`
 - `!bot stop`
 - `!bot status`
+- `!bot purge all` (delete all messages in current channel)
+- `!bot purge today` (delete today's messages)
+- `!bot purge yesterday` (delete yesterday's messages)
 
 Runtime language routing:
 - `!bot set language_pairs ro:en,en:ro,ru:en,en:ru`
