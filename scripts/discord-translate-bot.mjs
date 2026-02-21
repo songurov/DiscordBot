@@ -47,12 +47,15 @@ let startCommands = parseCommandList(process.env.START_COMMANDS || "start,/start
 let stopCommands = parseCommandList(process.env.STOP_COMMANDS || "stop,/stop,!stop");
 let statusCommands = parseCommandList(process.env.STATUS_COMMANDS || "status,/status,!status");
 const BOT_COMMAND_PREFIX = normalizeCommand(process.env.BOT_COMMAND_PREFIX || "!bot");
+const ERROR_NOTIFY_COOLDOWN_MS = parsePositiveInt(process.env.ERROR_NOTIFY_COOLDOWN_MS, 120000);
 
 let botUserId = null;
 let monitoredChannelIds = [];
 const channelLastSeenMessageIds = new Map();
 let controlChannelId = null;
 let translationEnabled = !requireStartCommand;
+let lastNotifiedErrorSignature = "";
+let lastNotifiedErrorAt = 0;
 
 const systemPrompt = [
   "You are a strict translation router.",
@@ -132,6 +135,7 @@ async function main() {
       await pollOnce();
     } catch (error) {
       console.error(`[discord-translate-bot] poll error: ${error.message}`);
+      await maybeNotifyOperationalError(error);
     }
     await sleep(pollIntervalMs);
   }
@@ -305,6 +309,70 @@ async function sendControlMessage(text, channelId = controlChannelId) {
       parse: [],
     },
   });
+}
+
+async function maybeNotifyOperationalError(error) {
+  const details = buildOperationalErrorDetails(error);
+  if (!details) return;
+
+  const now = Date.now();
+  const isSameError = details.signature === lastNotifiedErrorSignature;
+  if (isSameError && now - lastNotifiedErrorAt < ERROR_NOTIFY_COOLDOWN_MS) return;
+
+  lastNotifiedErrorSignature = details.signature;
+  lastNotifiedErrorAt = now;
+
+  const targetChannels =
+    monitoredChannelIds.length > 0
+      ? monitoredChannelIds
+      : controlChannelId
+        ? [controlChannelId]
+        : [];
+
+  for (const channelId of targetChannels) {
+    try {
+      await sendControlMessage(details.message, channelId);
+    } catch (notifyError) {
+      console.warn(
+        `[discord-translate-bot] could not send operational error message to ${channelId}: ${notifyError.message}`,
+      );
+    }
+  }
+}
+
+function buildOperationalErrorDetails(error) {
+  const raw = String(error?.message || "").trim();
+  if (!raw) return null;
+
+  if (!raw.includes("OpenAI API")) return null;
+
+  const statusMatch = raw.match(/failed \((\d+)\)/);
+  const status = statusMatch ? statusMatch[1] : "unknown";
+
+  const codeMatch = raw.match(/"code"\s*:\s*"([^"]+)"/);
+  const typeMatch = raw.match(/"type"\s*:\s*"([^"]+)"/);
+  const messageMatch = raw.match(/"message"\s*:\s*"([^"]+)"/);
+
+  const code = codeMatch ? codeMatch[1] : "";
+  const type = typeMatch ? typeMatch[1] : "";
+  const apiMessage = messageMatch ? messageMatch[1] : "";
+
+  if (code === "insufficient_quota") {
+    return {
+      signature: `openai:${status}:${code}`,
+      message:
+        "OpenAI error: insufficient_quota (429). Translation is blocked until billing/quota is available.",
+    };
+  }
+
+  const suffix = apiMessage ? ` ${apiMessage}` : "";
+  return {
+    signature: `openai:${status}:${code || type || "generic"}`,
+    message: `OpenAI error (${status}${code ? `, ${code}` : ""}${type ? `, ${type}` : ""}).${suffix}`.slice(
+      0,
+      1900,
+    ),
+  };
 }
 
 function renderConfigStatus() {
